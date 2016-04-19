@@ -1,5 +1,3 @@
-import java.lang.reflect.Field;
-
 public class AstExampleTest2 {
 	/*
 	int b;
@@ -10,7 +8,10 @@ public class AstExampleTest2 {
 	}
 	*/
 
-	public void test() {
+	static public int a = 10;
+
+	public int test() {
+		/*
 		try {
 			System.out.println("+20: " + Integer.parseInt("+20 ", 16));
 			System.out.println("11111111111");
@@ -19,6 +20,8 @@ public class AstExampleTest2 {
 			System.out.println(nfe.getMessage());
 		}
 		System.out.println("333333333");
+		*/
+		return a + 3;
 	}
 
 	/*

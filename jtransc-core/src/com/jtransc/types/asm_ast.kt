@@ -2,10 +2,10 @@ package com.jtransc.types
 
 import com.jtransc.ast.*
 import com.jtransc.ds.cast
-import com.jtransc.ds.hasFlag
 import com.jtransc.error.deprecated
 import com.jtransc.error.invalidOp
 import com.jtransc.error.noImpl
+import com.jtransc.input.isStatic
 import org.objectweb.asm.Handle
 import org.objectweb.asm.Opcodes
 import org.objectweb.asm.Type
@@ -18,6 +18,10 @@ val Handle.ast: AstMethodRef get() = AstMethodRef(FqName.fromInternal(this.owner
 const val DEBUG = false
 
 fun Asm2Ast(clazz: AstType.REF, method: MethodNode): AstBody {
+	return Asm2Baf(clazz, method).toAst()
+}
+
+fun Asm2Baf(clazz: AstType.REF, method: MethodNode): BafBody {
 	//val DEBUG = method.name == "paramOrderSimple"
 	if (DEBUG) {
 		println("--------------------------------------------------------------------")
@@ -38,24 +42,27 @@ fun Asm2Ast(clazz: AstType.REF, method: MethodNode): AstBody {
 	}
 
 	val prefix = createFunctionPrefix(clazz, method, locals)
-	basicBlocks.queue(method.instructions.first, prefix.output)
+	basicBlocks.queue(method.instructions.first, prefix)
 
 	for (b in tryCatchBlocks) {
-		val catchStack = Stack<AstExpr>()
-		catchStack.push(AstExpr.CAUGHT_EXCEPTION(AstType.OBJECT))
-		basicBlocks.queue(b.handler, BasicBlock.Input(catchStack, prefix.output.locals))
+		val prefix = ArrayList<Baf>()
+		val catchStack = Stack<BafLocal>()
+		val errorLocal = locals.local(AstType.OBJECT, 0)
+		prefix.add(Baf.CAUGHT_EXCEPTION(errorLocal))
+		catchStack.push(errorLocal)
+		basicBlocks.queue(b.handler, BasicBlock.Input(catchStack, prefix))
 	}
 
 	val body2 = method.instructions.toArray().toList().flatMap {
 		//println(basicBlocks.getBasicBlockForLabel(it))
-		basicBlocks.getBasicBlockForLabel(it)?.stms ?: listOf()
+		basicBlocks.getBasicBlockForLabel(it)?.stms?.toList() ?: listOf()
 	}
 
-	return AstBody(
-		AstStm.STMS(optimize(prefix.stms + body2, labels.referencedLabels)),
-		locals.locals.values.filterIsInstance<AstExpr.LOCAL>().map { it.local },
+	return BafBody(
+		body2,
+		locals,
 		tryCatchBlocks.map {
-			AstTrap(
+			BafTrap(
 				start = labels.label(it.start),
 				end = labels.label(it.end),
 				handler = labels.label(it.handler),
@@ -65,32 +72,18 @@ fun Asm2Ast(clazz: AstType.REF, method: MethodNode): AstBody {
 	)
 }
 
-fun optimize(stms: List<AstStm>, referencedLabels: HashSet<AstLabel>): List<AstStm> {
-	return stms.filter {
-		if (it is AstStm.STM_LABEL) {
-			it.label in referencedLabels
-		} else if (it is AstStm.NOP) {
-			false
-		} else {
-			true
-		}
-	}
-}
-
-data class FunctionPrefix(val output: BasicBlock.Input, val stms: List<AstStm>)
-
 class BasicBlocks(
 	private val clazz: AstType.REF,
 	private val method: MethodNode,
-    private val DEBUG: Boolean
+	private val DEBUG: Boolean
 ) {
-	val locals = Locals()
+	val locals = BafLocals()
 	val labels = Labels()
 	private val blocks = hashMapOf<AbstractInsnNode, BasicBlock>()
 
 	fun queue(entry: AbstractInsnNode, input: BasicBlock.Input) {
 		if (entry in blocks) return
-		val bb = BasicBlockBuilder(clazz, method, locals, labels, DEBUG).call(entry, input)
+		val bb = BasicBlockBuilder(clazz, method, locals, labels, input.prefix, DEBUG).call(entry, input)
 		blocks[bb.entry] = bb
 		for (item in bb.outgoingAll) queue(item, bb.output)
 	}
@@ -100,44 +93,41 @@ class BasicBlocks(
 	}
 }
 
-fun createFunctionPrefix(clazz: AstType.REF, method: MethodNode, locals: Locals): FunctionPrefix {
+fun createFunctionPrefix(clazz: AstType.REF, method: MethodNode, locals: BafLocals): BasicBlock.Input {
 	//val localsOutput = arrayListOf<AstExpr.LocalExpr>()
-	val localsOutput = hashMapOf<Locals.ID, AstExpr.LocalExpr>()
-	val isStatic = method.access.hasFlag(Opcodes.ACC_STATIC)
+	val stms = ArrayList<Baf>()
 	val methodType = AstType.demangleMethod(method.desc)
 
-	var stms = ArrayList<AstStm>()
 	var idx = 0
-
-	for (arg in (if (!isStatic) listOf(AstExpr.THIS(clazz.name)) else listOf()) + methodType.args.map { AstExpr.PARAM(it) }) {
-		//setLocalAtIndex(idx, AstExpr.PARAM(arg))
-		val local = locals.local(fixType(arg.type), idx)
-		stms.add(AstStmUtils.set(local, arg))
-		val info = localPair(idx, arg.type, "l")
-		localsOutput[info] = local
+	if (!method.isStatic()) {
+		val type = AstType.REF(clazz.name)
+		val stm = stms.add(Baf.THIS(locals.local(type, idx)))
 		idx++
-		if (arg.type.isLongOrDouble()) {
-			localsOutput[info] = local
-			idx++
-		}
 	}
 
-	return FunctionPrefix(BasicBlock.Input(Stack(), localsOutput), stms)
+	for (arg in methodType.args) {
+		val type = arg.type
+		val stm = stms.add(Baf.PARAM(locals.local(type, idx), arg.index))
+		idx++
+	}
+
+	return BasicBlock.Input(Stack(), stms)
 }
 
 data class BasicBlock(
 	val input: Input,
 	val output: Input,
 	val entry: AbstractInsnNode,
-	val stms: List<AstStm>,
+	val stms: ArrayList<Baf>,
 	val next: AbstractInsnNode?,
 	val outgoing: List<AbstractInsnNode>
 ) {
 	val outgoingAll = (if (next != null) listOf(next) else listOf()) + outgoing
 
 	data class Input(
-		val stack: Stack<AstExpr>,
-		val locals: Map<Locals.ID, AstExpr.LocalExpr>
+		val stack: Stack<BafLocal>,
+		//val locals: Map<BafLocalId, BafLocal>,
+		val prefix: ArrayList<Baf> = ArrayList<Baf>()
 	)
 }
 
@@ -157,6 +147,7 @@ class Labels {
 	}
 }
 
+/*
 fun localPair(index: Int, type: AstType, prefix: String) = Locals.ID(index, fixType(type), prefix)
 
 class Locals {
@@ -175,6 +166,35 @@ class Locals {
 
 	fun tempLocal(type: AstType): AstExpr.LocalExpr {
 		return local(type, tempLocalId++, "t")
+	}
+}
+*/
+
+class BafLocals {
+	data class ID(val index: Int, val type: AstType, val kind: BafLocal.Kind)
+
+	private val locals = hashMapOf<ID, BafLocal>()
+
+	fun getAllLocals(): List<BafLocal> = locals.values.toList()
+
+	var tempID = 0
+
+	fun _alloc(index:Int, type:AstType, kind: BafLocal.Kind): BafLocal {
+		val idd = ID(index, type, kind)
+		if (idd !in locals) locals[idd] = BafLocal(index, type, kind)
+		return locals[idd]!!
+	}
+
+	fun temp(type: AstType): BafLocal {
+		return _alloc(tempID++, type, BafLocal.Kind.TEMP)
+	}
+
+	fun local(type: AstType, index: Int): BafLocal {
+		return _alloc(index, type, BafLocal.Kind.LOCAL)
+	}
+
+	fun frameVar(type: AstType, index: Int): BafLocal {
+		return _alloc(index, type, BafLocal.Kind.FRAME)
 	}
 }
 
@@ -197,104 +217,81 @@ fun nameType(type: AstType): String {
 	}
 }
 
+class AsmMethodVisitor {
+
+}
 
 // http://stackoverflow.com/questions/4324321/java-local-variables-how-do-i-get-a-variable-name-or-type-using-its-index
 private class BasicBlockBuilder(
 	val clazz: AstType.REF,
 	val method: MethodNode,
-	val locals: Locals,
+	val locals: BafLocals,
 	val labels: Labels,
-    val DEBUG: Boolean
+	val _bafStms: ArrayList<Baf> = ArrayList<Baf>(),
+	val DEBUG: Boolean
 ) {
 	companion object {
 		val PTYPES = listOf(AstType.INT, AstType.LONG, AstType.FLOAT, AstType.DOUBLE, AstType.OBJECT, AstType.BYTE, AstType.CHAR, AstType.SHORT)
 		val CTYPES = listOf(AstBinop.EQ, AstBinop.NE, AstBinop.LT, AstBinop.GE, AstBinop.GT, AstBinop.LE, AstBinop.EQ, AstBinop.NE)
 	}
 
-	//val list = method.instructions
 	val methodType = AstType.demangleMethod(method.desc)
-	val stms = ArrayList<AstStm>()
-	val stack = Stack<AstExpr>()
+
+
+	val _bafStack = Stack<BafLocal>()
 	var lastLine = -1
 
-	//fun fix(field: AstFieldRef): AstFieldRef = locateRightClass.locateRightField(field)
-	//fun fix(method: AstMethodRef): AstMethodRef = locateRightClass.locateRightMethod(method)
-
-	fun fix(field: AstFieldRef): AstFieldRef = field
-	fun fix(method: AstMethodRef): AstMethodRef = method
-
-	fun stmAdd(s: AstStm) {
-		// Adding statements must dump stack (and restore later) so we preserve calling order!
-		// Unless it is just a LValue
-		//if (stack.size == 1 && stack.peek() is AstExpr.LocalExpr) {
-		//if (false) {
-		//	stms.add(s)
-		//} else {
-		if (DEBUG) println("Preserve because stm: ${s}")
-		val stack = preserveStack()
-		stms.add(s)
-		restoreStack(stack)
-		//}
+	private fun add(baf: Baf) {
+		for (ref in baf.readReferences) ref.addRead(baf)
+		_bafStms.add(baf)
 	}
 
-	fun stackPush(e: AstExpr) {
-		stack.push(e)
+	private fun push(baf: Baf.RESULT) {
+		add(baf)
+		baf.target.addWrite(baf)
+		push(baf.target)
 	}
 
-	fun stackPushList(e: List<AstExpr>) {
-		for (i in e) stackPush(i)
+	private fun push(local: BafLocal) {
+		_bafStack.push(local)
 	}
 
-	fun stackPop(): AstExpr {
-		if (stack.isEmpty()) {
-			println("stackPop() : stack is empty! : ${this.clazz.name}::${this.method.name}")
+	private fun pop(): BafLocal {
+		if (_bafStack.isEmpty()) {
+			println("empty stack!")
 		}
-		return stack.pop()
+		return _bafStack.pop()
 	}
 
-	fun stackPeek(): AstExpr {
-		if (stack.isEmpty()) {
-			println("stackPeek() : stack is empty! : ${this.clazz.name}::${this.method.name}")
+	private fun peek(): BafLocal {
+		if (_bafStack.isEmpty()) {
+			println("empty stack!")
 		}
-		return stack.peek()
+		return _bafStack.peek()
 	}
 
-	fun stmSet(local: AstExpr.LocalExpr, value: AstExpr): Boolean {
-		if (local != value) {
-			stmAdd(AstStm.SET(local, fastcast(value, local.type)))
-			return true
-		} else {
-			return false
-		}
+	private fun peekType(): AstType {
+		return peek().type
 	}
-
-	//fun stmSet2(local: AstExpr.LocalExpr, value: AstExpr): Boolean {
-	//	if (local != value) {
-	//		stms.add(AstStm.SET(local, fastcast(value, local.type)))
-	//		return true
-	//	} else {
-	//		return false
-	//	}
-	//}
 
 	fun handleField(i: FieldInsnNode) {
-		//val isStatic = (i.opcode == Opcodes.GETSTATIC) || (i.opcode == Opcodes.PUTSTATIC)
-		val ref = fix(AstFieldRef(AstType.REF_INT2(i.owner).fqname.fqname, i.name, com.jtransc.ast.AstType.demangle(i.desc)))
+		val ref = AstFieldRef(AstType.REF_INT2(i.owner).fqname.fqname, i.name, com.jtransc.ast.AstType.demangle(i.desc))
 		when (i.opcode) {
 			Opcodes.GETSTATIC -> {
-				stackPush(AstExprUtils.fastcast(AstExpr.STATIC_FIELD_ACCESS(ref), ref.type))
+				push(Baf.FIELD_STATIC_GET(locals.temp(ref.type), ref))
 			}
 			Opcodes.GETFIELD -> {
-				val obj = AstExprUtils.fastcast(stackPop(), ref.containingTypeRef)
-				stackPush(AstExprUtils.fastcast(AstExpr.INSTANCE_FIELD_ACCESS(ref, obj), ref.type))
+				val obj = pop()
+				push(Baf.FIELD_INSTANCE_GET(locals.temp(ref.type), ref, obj))
 			}
 			Opcodes.PUTSTATIC -> {
-				stmAdd(AstStm.SET_FIELD_STATIC(ref, AstExprUtils.fastcast(stackPop(), ref.type)))
+				val param = pop()
+				add(Baf.FIELD_STATIC_SET(ref, param))
 			}
 			Opcodes.PUTFIELD -> {
-				val param = stackPop()
-				val obj = AstExprUtils.fastcast(stackPop(), ref.containingTypeRef)
-				stmAdd(AstStm.SET_FIELD_INSTANCE(ref, obj, AstExprUtils.fastcast(param, ref.type)))
+				val param = pop()
+				val obj = pop()
+				add(Baf.FIELD_INSTANCE_SET(ref, obj, param))
 			}
 			else -> invalidOp
 		}
@@ -310,138 +307,116 @@ private class BasicBlockBuilder(
 	fun fastcast(expr: AstExpr, to: AstType) = AstExprUtils.fastcast(expr, to)
 
 	fun pushBinop(type: AstType, op: AstBinop) {
-		val r = stackPop()
-		val l = stackPop()
-		stackPush(optimize(AstExprUtils.BINOP(type, l, op, r)))
+		val r = pop()
+		val l = pop()
+		push(Baf.BINOP(locals.temp(type), l, op, r))
+	}
+
+	fun pushUnop(type: AstType, op: AstUnop) {
+		val r = pop()
+		push(Baf.UNOP(locals.temp(type), op, r))
+	}
+
+	private fun pushCast(type: AstType) {
+		val r = pop()
+		push(Baf.CAST(locals.temp(type), r))
 	}
 
 	fun arrayLoad(type: AstType): Unit {
-		val index = stackPop()
-		val array = stackPop()
-		stackPush(AstExpr.ARRAY_ACCESS(fastcast(array, AstType.ARRAY(type)), fastcast(index, AstType.INT)))
+		val bafIndex = pop()
+		val bafArray = pop()
+		val target = locals.temp(type)
+		add(Baf.ARRAY_LOAD(target, bafArray, bafIndex))
+		push(target)
 	}
 
 	fun arrayStore(elementType: AstType): Unit {
-		val expr = stackPop()
-		val index = stackPop()
-		val array = stackPop()
-		stmAdd(AstStm.SET_ARRAY(fastcast(array, AstType.ARRAY(elementType)), fastcast(index, AstType.INT), fastcast(expr, elementType)))
+		val bafExpr = pop()
+		val bafIndex = pop()
+		val bafArray = pop()
+		add(Baf.ARRAY_STORE(bafArray, bafIndex, bafExpr))
 	}
 
 	private var stackPopToLocalsItemsCount = 0
 
-	fun stackPopToLocalsFixOrder() {
-		if (stackPopToLocalsItemsCount == 0) return
-		val last = stms.takeLast(stackPopToLocalsItemsCount)
-		for (n in 0 until stackPopToLocalsItemsCount) stms.removeAt(stms.size - 1)
-		stms.addAll(last.reversed())
-		//stms.addAll(last)
-		//if (DEBUG) println("stackPopToLocalsFixOrder")
-		stackPopToLocalsItemsCount = 0
+	fun popDouble(): List<BafLocal> = if (peekType().isLongOrDouble()) popCount(1) else popCount(2)
+	fun popSingle(): List<BafLocal> = popCount(1)
+	fun popCount(count: Int): List<BafLocal> = (0 until count).map { pop() }
+
+	fun pushList(list: List<BafLocal>) {
+		for (i in list) push(i)
 	}
 
-	fun stackPopDouble(): List<AstExpr.LocalExpr> {
-		return if (stackPeek().type.isLongOrDouble()) stackPopToLocalsCount(1) else stackPopToLocalsCount(2)
-	}
-
-	fun stackPopToLocalsCount(count: Int): List<AstExpr.LocalExpr> {
-		val pairs = (0 until count).map {
-			val v = stackPop()
-			val local = locals.tempLocal(v.type)
-			Pair(local, v)
-		}
-
-		//for (p in pairs.reversed()) {
-		for (p in pairs) {
-			if (stmSet(p.first, p.second)) {
-				stackPopToLocalsItemsCount++
-			}
-		}
-
-		return pairs.map { it.first }.reversed()
-		//return pairs.map { it.first }
+	private fun pushLiteral(value: Any?) {
+		push(Baf.IMMEDIATE(locals.temp(AstType.fromConstant(value)), value))
 	}
 
 	fun handleInsn(i: InsnNode): Unit {
 		val op = i.opcode
 		when (i.opcode) {
-			Opcodes.NOP -> {
-				//stmAdd(AstStm.NOP)
-				Unit
-			}
-			Opcodes.ACONST_NULL -> stackPush(AstExpr.LITERAL(null))
-			in Opcodes.ICONST_M1..Opcodes.ICONST_5 -> stackPush(AstExpr.LITERAL((op - Opcodes.ICONST_0).toInt()))
-			in Opcodes.LCONST_0..Opcodes.LCONST_1 -> stackPush(AstExpr.LITERAL((op - Opcodes.LCONST_0).toLong()))
-			in Opcodes.FCONST_0..Opcodes.FCONST_2 -> stackPush(AstExpr.LITERAL((op - Opcodes.FCONST_0).toFloat()))
-			in Opcodes.DCONST_0..Opcodes.DCONST_1 -> stackPush(AstExpr.LITERAL((op - Opcodes.DCONST_0).toDouble()))
+			Opcodes.NOP -> Unit
+			Opcodes.ACONST_NULL -> pushLiteral(null)
+			in Opcodes.ICONST_M1..Opcodes.ICONST_5 -> pushLiteral((op - Opcodes.ICONST_0).toInt())
+			in Opcodes.LCONST_0..Opcodes.LCONST_1 -> pushLiteral((op - Opcodes.LCONST_0).toLong())
+			in Opcodes.FCONST_0..Opcodes.FCONST_2 -> pushLiteral((op - Opcodes.FCONST_0).toFloat())
+			in Opcodes.DCONST_0..Opcodes.DCONST_1 -> pushLiteral((op - Opcodes.DCONST_0).toDouble())
 			in Opcodes.IALOAD..Opcodes.SALOAD -> arrayLoad(PTYPES[op - Opcodes.IALOAD])
 			in Opcodes.IASTORE..Opcodes.SASTORE -> arrayStore(PTYPES[op - Opcodes.IASTORE])
 			Opcodes.POP -> {
 				// We store it, so we don't lose all the calculated stuff!
-				val pop = stackPopToLocalsCount(1)
-				stackPopToLocalsFixOrder()
+				popSingle()
 			}
 			Opcodes.POP2 -> {
-				val pop = stackPopDouble()
-				stackPopToLocalsFixOrder()
+				popDouble()
 			}
 			Opcodes.DUP -> {
-				val value = stackPop()
-				val local = locals.tempLocal(value.type)
-
-				stmSet(local, value)
-				stackPush(local)
-				stackPush(local)
+				val v1 = popSingle()
+				pushList(v1)
+				pushList(v1)
+			}
+			Opcodes.DUP2 -> {
+				val v1 = popDouble()
+				pushList(v1)
+				pushList(v1)
 			}
 			Opcodes.DUP_X1 -> {
 				//untestedWarn2("DUP_X1")
-				val chunk1 = stackPopToLocalsCount(1)
-				val chunk2 = stackPopToLocalsCount(1)
-				stackPopToLocalsFixOrder()
-				stackPushList(chunk1)
-				stackPushList(chunk2)
-				stackPushList(chunk1)
+				val v1 = popSingle()
+				val v2 = popSingle()
+				pushList(v1)
+				pushList(v2)
+				pushList(v1)
 			}
 			Opcodes.DUP_X2 -> {
-				val chunk1 = stackPopToLocalsCount(1)
-				val chunk2 = stackPopDouble()
-				stackPopToLocalsFixOrder()
-				stackPushList(chunk1)
-				stackPushList(chunk2)
-				stackPushList(chunk1)
-			}
-			Opcodes.DUP2 -> {
-				val chunk1 = stackPopDouble()
-				stackPopToLocalsFixOrder()
-				stackPushList(chunk1)
-				stackPushList(chunk1)
+				val v1 = popSingle()
+				val v2 = popDouble()
+				pushList(v1)
+				pushList(v2)
+				pushList(v1)
 			}
 			Opcodes.DUP2_X1 -> {
 				//untestedWarn2("DUP2_X1")
-				val chunk1 = stackPopDouble()
-				val chunk2 = stackPopToLocalsCount(1)
-				stackPopToLocalsFixOrder()
-				stackPushList(chunk1)
-				stackPushList(chunk2)
-				stackPushList(chunk1)
+				val v1 = popDouble()
+				val v2 = popSingle()
+				pushList(v1)
+				pushList(v2)
+				pushList(v1)
 			}
 			Opcodes.DUP2_X2 -> {
 				//untestedWarn2("DUP2_X2")
-				val chunk1 = stackPopDouble()
-				val chunk2 = stackPopDouble()
-				stackPopToLocalsFixOrder()
-				stackPushList(chunk1)
-				stackPushList(chunk2)
-				stackPushList(chunk1)
+				val v1 = popDouble()
+				val v2 = popDouble()
+				pushList(v1)
+				pushList(v2)
+				pushList(v1)
 			}
 			Opcodes.SWAP -> {
-				val v1 = stackPop()
-				val v2 = stackPop()
-				stackPopToLocalsFixOrder()
-				stackPush(v1)
-				stackPush(v2)
+				val v1 = pop()
+				val v2 = pop()
+				push(v1)
+				push(v2)
 			}
-			in Opcodes.INEG..Opcodes.DNEG -> stackPush(AstExpr.UNOP(AstUnop.NEG, stackPop()))
+			in Opcodes.INEG..Opcodes.DNEG -> pushUnop(PTYPES[op - Opcodes.INEG], AstUnop.NEG)
 
 			in Opcodes.IADD..Opcodes.DADD -> pushBinop(PTYPES[op - Opcodes.IADD], AstBinop.ADD)
 			in Opcodes.ISUB..Opcodes.DSUB -> pushBinop(PTYPES[op - Opcodes.ISUB], AstBinop.SUB)
@@ -455,13 +430,13 @@ private class BasicBlockBuilder(
 			in Opcodes.IOR..Opcodes.LOR -> pushBinop(PTYPES[op - Opcodes.IOR], AstBinop.OR)
 			in Opcodes.IXOR..Opcodes.LXOR -> pushBinop(PTYPES[op - Opcodes.IXOR], AstBinop.XOR)
 
-			Opcodes.I2L, Opcodes.F2L, Opcodes.D2L -> stackPush(fastcast(stackPop(), AstType.LONG))
-			Opcodes.I2F, Opcodes.L2F, Opcodes.D2F -> stackPush(fastcast(stackPop(), AstType.FLOAT))
-			Opcodes.I2D, Opcodes.L2D, Opcodes.F2D -> stackPush(fastcast(stackPop(), AstType.DOUBLE))
-			Opcodes.L2I, Opcodes.F2I, Opcodes.D2I -> stackPush(fastcast(stackPop(), AstType.INT))
-			Opcodes.I2B -> stackPush(fastcast(stackPop(), AstType.BYTE))
-			Opcodes.I2C -> stackPush(fastcast(stackPop(), AstType.CHAR))
-			Opcodes.I2S -> stackPush(fastcast(stackPop(), AstType.SHORT))
+			Opcodes.I2L, Opcodes.F2L, Opcodes.D2L -> pushCast(AstType.LONG)
+			Opcodes.I2F, Opcodes.L2F, Opcodes.D2F -> pushCast(AstType.FLOAT)
+			Opcodes.I2D, Opcodes.L2D, Opcodes.F2D -> pushCast(AstType.DOUBLE)
+			Opcodes.L2I, Opcodes.F2I, Opcodes.D2I -> pushCast(AstType.INT)
+			Opcodes.I2B -> pushCast(AstType.BYTE)
+			Opcodes.I2C -> pushCast(AstType.CHAR)
+			Opcodes.I2S -> pushCast(AstType.SHORT)
 
 			Opcodes.LCMP -> pushBinop(AstType.LONG, AstBinop.LCMP)
 			Opcodes.FCMPL -> pushBinop(AstType.FLOAT, AstBinop.CMPL)
@@ -469,9 +444,9 @@ private class BasicBlockBuilder(
 			Opcodes.DCMPL -> pushBinop(AstType.DOUBLE, AstBinop.CMPL)
 			Opcodes.DCMPG -> pushBinop(AstType.DOUBLE, AstBinop.CMPG)
 
-			Opcodes.ARRAYLENGTH -> stackPush(AstExpr.ARRAY_LENGTH(stackPop()))
-			Opcodes.MONITORENTER -> stmAdd(AstStm.MONITOR_ENTER(stackPop()))
-			Opcodes.MONITOREXIT -> stmAdd(AstStm.MONITOR_EXIT(stackPop()))
+			Opcodes.ARRAYLENGTH -> push(Baf.ARRAY_LENGTH(locals.temp(AstType.INT), pop()))
+			Opcodes.MONITORENTER -> add(Baf.MONITOR_ENTER(pop()))
+			Opcodes.MONITOREXIT -> add(Baf.MONITOR_EXIT(pop()))
 			else -> invalidOp("$op")
 		}
 	}
@@ -479,7 +454,7 @@ private class BasicBlockBuilder(
 	fun handleMultiArray(i: MultiANewArrayInsnNode) {
 		when (i.opcode) {
 			Opcodes.MULTIANEWARRAY -> {
-				stackPush(AstExpr.NEW_ARRAY(AstType.REF_INT(i.desc) as AstType.ARRAY, (0 until i.dims).map { stackPop() }.reversed()))
+				push(Baf.NEW_ARRAY(locals.temp(AstType.REF_INT(i.desc) as AstType.ARRAY), (0 until i.dims).map { pop() }.reversed()))
 			}
 			else -> invalidOp("$i")
 		}
@@ -488,10 +463,10 @@ private class BasicBlockBuilder(
 	fun handleType(i: TypeInsnNode) {
 		val type = AstType.REF_INT(i.desc)
 		when (i.opcode) {
-			Opcodes.NEW -> stackPush(fastcast(AstExpr.NEW(type as AstType.REF), AstType.OBJECT))
-			Opcodes.ANEWARRAY -> stackPush(AstExpr.NEW_ARRAY(AstType.ARRAY(type), listOf(stackPop())))
-			Opcodes.CHECKCAST -> stackPush(cast(stackPop(), type))
-			Opcodes.INSTANCEOF -> stackPush(AstExpr.INSTANCE_OF(stackPop(), type))
+			Opcodes.NEW -> push(Baf.NEW(locals.temp(type as AstType.REF)))
+			Opcodes.ANEWARRAY -> push(Baf.NEW_ARRAY(locals.temp(AstType.ARRAY(type)), listOf(pop())))
+			Opcodes.CHECKCAST -> push(Baf.CHECK_CAST(locals.temp(type), pop()))
+			Opcodes.INSTANCEOF -> push(Baf.INSTANCE_OF(locals.temp(type), pop()))
 			else -> invalidOp("$i")
 		}
 	}
@@ -501,13 +476,11 @@ private class BasicBlockBuilder(
 		val index = i.`var`
 
 		fun load(type: AstType) {
-			stackPush(locals.local(type, index))
+			push(Baf.COPY(locals.temp(type), locals.local(type, index)))
 		}
 
 		fun store(type: AstType) {
-			val expr = stackPop()
-			val newLocal = locals.local(type, index)
-			stmSet(newLocal, expr)
+			add(Baf.COPY(locals.local(type, index), pop()))
 		}
 
 		when (op) {
@@ -518,27 +491,30 @@ private class BasicBlockBuilder(
 		}
 	}
 
-	fun addJump(cond: AstExpr?, label: AstLabel) {
+	fun addJump(cond: BafLocal?, label: AstLabel) {
 		if (DEBUG) println("Preserve because jump")
-		restoreStack(preserveStack())
 		labels.ref(label)
-		stms.add(AstStm.IF_GOTO(label, cond))
+		if (cond != null) {
+			add(Baf.IF_GOTO(cond, label))
+		} else {
+			add(Baf.GOTO(label))
+		}
 	}
 
 
 	fun handleLdc(i: LdcInsnNode) {
 		val cst = i.cst
 		when (cst) {
-			is Int, is Float, is Long, is Double, is String -> stackPush(AstExpr.LITERAL(cst))
-			is Type -> stackPush(AstExpr.CLASS_CONSTANT(AstType.REF_INT(cst.internalName)))
+			is Int, is Float, is Long, is Double, is String -> pushLiteral(cst)
+			is Type -> pushLiteral(AstType.REF_INT(cst.internalName))
 			else -> invalidOp
 		}
 	}
 
 	fun handleInt(i: IntInsnNode) {
 		when (i.opcode) {
-			Opcodes.BIPUSH -> stackPush(AstExpr.LITERAL(i.operand.toByte()))
-			Opcodes.SIPUSH -> stackPush(AstExpr.LITERAL(i.operand.toShort()))
+			Opcodes.BIPUSH -> pushLiteral(i.operand.toByte())
+			Opcodes.SIPUSH -> pushLiteral(i.operand.toShort())
 			Opcodes.NEWARRAY -> {
 				val type = when (i.operand) {
 					Opcodes.T_BOOLEAN -> AstType.BOOL
@@ -551,7 +527,7 @@ private class BasicBlockBuilder(
 					Opcodes.T_LONG -> AstType.LONG
 					else -> invalidOp
 				}
-				stackPush(AstExpr.NEW_ARRAY(AstType.ARRAY(type, 1), listOf(stackPop())))
+				push(Baf.NEW_ARRAY(locals.temp(AstType.ARRAY(type, 1)), listOf(pop())))
 			}
 			else -> invalidOp
 		}
@@ -560,108 +536,49 @@ private class BasicBlockBuilder(
 	fun handleMethod(i: MethodInsnNode) {
 		val type = AstType.REF_INT(i.owner)
 		val clazz = if (type is AstType.REF) type else AstType.OBJECT
-		val methodRef = fix(com.jtransc.ast.AstMethodRef(clazz.fqname.fqname, i.name, AstType.demangleMethod(i.desc)))
+		val methodRef = com.jtransc.ast.AstMethodRef(clazz.fqname.fqname, i.name, AstType.demangleMethod(i.desc))
 		val isSpecial = i.opcode == Opcodes.INVOKESPECIAL
 
-		val args = methodRef.type.args.reversed().map { fastcast(stackPop(), it.type) }.reversed()
-		val obj = if (i.opcode != Opcodes.INVOKESTATIC) stackPop() else null
-
-		when (i.opcode) {
-			Opcodes.INVOKESTATIC -> {
-				stackPush(AstExpr.CALL_STATIC(clazz, methodRef, args, isSpecial))
-			}
-			Opcodes.INVOKEVIRTUAL, Opcodes.INVOKEINTERFACE, Opcodes.INVOKESPECIAL -> {
-				if (obj!!.type !is AstType.REF) {
-					//invalidOp("Obj must be an object $obj, but was ${obj.type}")
-				}
-				val obj = fastcast(obj, methodRef.containingClassType)
-				if (i.opcode != Opcodes.INVOKESPECIAL) {
-					stackPush(AstExpr.CALL_INSTANCE(obj, methodRef, args, isSpecial))
-				} else {
-					stackPush(AstExpr.CALL_SPECIAL(AstExprUtils.fastcast(obj, methodRef.containingClassType), methodRef, args, isSpecial = true))
-				}
-			}
-			else -> invalidOp
-		}
+		val args = methodRef.type.args.reversed().map { pop() }.reversed()
+		val obj = if (i.opcode != Opcodes.INVOKESTATIC) pop() else null
 
 		if (methodRef.type.retVoid) {
-			//preserveStack()
-			stmAdd(AstStm.STM_EXPR(stackPop()))
+			add(Baf.INVOKE_VOID(clazz, obj, methodRef, args, isSpecial = true))
+		} else {
+			push(Baf.INVOKE(locals.temp(methodRef.type.ret), clazz, obj, methodRef, args, isSpecial = true))
 		}
 	}
 
 	fun handleInvokeDynamic(i: InvokeDynamicInsnNode) {
-		stackPush(AstExprUtils.INVOKE_DYNAMIC(
+		val bsm = i.bsm.ast
+		push(Baf.INVOKE_DYNAMIC(
+			locals.temp(bsm.type.ret),
 			AstMethodWithoutClassRef(i.name, AstType.demangleMethod(i.desc)),
-			i.bsm.ast,
+			bsm,
 			i.bsmArgs.map {
 				when (it) {
 					is org.objectweb.asm.Type -> when (it.sort) {
-						Type.METHOD -> AstExpr.METHODTYPE_CONSTANT(AstType.demangleMethod(it.descriptor))
+						Type.METHOD -> AstType.demangleMethod(it.descriptor)
 						else -> noImpl("${it.sort} : ${it}")
 					}
 					is org.objectweb.asm.Handle -> {
 						val kind = AstMethodHandle.Kind.fromId(it.tag)
 						val type = AstType.demangleMethod(it.desc)
-						AstExpr.METHODHANDLE_CONSTANT(AstMethodHandle(type, AstMethodRef(FqName.fromInternal(it.owner), it.name, type), kind))
+						AstMethodHandle(type, AstMethodRef(FqName.fromInternal(it.owner), it.name, type), kind)
 					}
-					else -> AstExpr.LITERAL(it)
+					else -> it
 				}
 			}
 		))
 	}
 
 	fun handleIinc(i: IincInsnNode) {
-		val local = locals.local(AstType.INT, i.`var`)
-		stmSet(local, local + AstExpr.LITERAL(i.incr))
+		add(Baf.IINCR(locals.local(AstType.INT, i.`var`), i.incr))
 	}
 
 	fun handleLineNumber(i: LineNumberNode) {
 		lastLine = i.line
-		stmAdd(AstStm.LINE(i.line))
-	}
-
-	fun preserveStackLocal(index: Int, type: AstType): AstExpr.LocalExpr {
-		return locals.local(type, index, "s")
-	}
-
-	fun dumpExprs() {
-		while (stack.isNotEmpty()) {
-			stmAdd(AstStm.STM_EXPR(stackPop()))
-		}
-	}
-
-	fun preserveStack(): List<AstExpr.LocalExpr> {
-		if (stack.isEmpty()) {
-			return Collections.EMPTY_LIST as List<AstExpr.LocalExpr>
-		} else {
-			val items = arrayListOf<AstExpr.LocalExpr>()
-			val preservedStack = (0 until stack.size).map { stackPop() }
-
-			if (DEBUG) println("[[")
-			for ((index2, value) in preservedStack.withIndex().reversed()) {
-				//val index = index2
-				val index = preservedStack.size - index2 - 1
-				val local = preserveStackLocal(index, value.type)
-				if (DEBUG) println("PRESERVE: $local : $index, ${value.type}")
-				stmSet(local, value)
-				items.add(local)
-			}
-			items.reverse()
-			if (DEBUG) println("]]")
-			return items
-		}
-	}
-
-	fun restoreStack(stackToRestore: List<AstExpr.LocalExpr>) {
-		if (stackToRestore.size >= 2) {
-			//println("stackToRestore.size:" + stackToRestore.size)
-		}
-		for (i in stackToRestore.reversed()) {
-			if (DEBUG) println("RESTORE: $i")
-			// @TODO: avoid reversed by inserting in the right order!
-			this.stack.push(i)
-		}
+		add(Baf.LINE(i.line))
 	}
 
 	fun call(entry: AbstractInsnNode, input: BasicBlock.Input): BasicBlock {
@@ -673,16 +590,13 @@ private class BasicBlockBuilder(
 		if (DEBUG && input.stack.size >= 2) println("---------")
 
 		if (i is LabelNode) {
-			stms.add(AstStm.STM_LABEL(labels.label(i)))
+			add(Baf.LABEL(labels.label(i)))
 			i = i.next
 		}
 
-		this.stack.clear()
-		for (i in input.stack.clone() as Stack<AstExpr>) {
-			this.stack += i
-		}
-		for (l in HashMap(input.locals)) {
-			locals.locals[l.key] = l.value
+		this._bafStack.clear()
+		for (i in input.stack.clone() as Stack<BafLocal>) {
+			this._bafStack += i
 		}
 
 		if (DEBUG) {
@@ -697,22 +611,17 @@ private class BasicBlockBuilder(
 				is InsnNode -> {
 					when (op) {
 						in Opcodes.IRETURN..Opcodes.ARETURN -> {
-							val ret = stackPop()
-							dumpExprs()
-							stmAdd(AstStm.RETURN(fastcast(ret, this.methodType.ret)))
+							add(Baf.RETURN(pop()))
 							next = null
 							break@loop
 						}
 						Opcodes.RETURN -> {
-							dumpExprs()
-							stmAdd(AstStm.RETURN(null))
+							add(Baf.RETURN_VOID())
 							next = null
 							break@loop
 						}
 						Opcodes.ATHROW -> {
-							val ret = stackPop()
-							dumpExprs()
-							stmAdd(AstStm.THROW(ret))
+							add(Baf.THROW(pop()))
 							next = null
 							break@loop
 						}
@@ -722,15 +631,27 @@ private class BasicBlockBuilder(
 				is JumpInsnNode -> {
 					when (op) {
 						in Opcodes.IFEQ..Opcodes.IFLE -> {
-							addJump(AstExprUtils.BINOP(AstType.BOOL, stackPop(), CTYPES[op - Opcodes.IFEQ], AstExpr.LITERAL(0)), labels.label(i.label))
+							val l = pop()
+							push(Baf.IMMEDIATE(locals.temp(AstType.INT), 0))
+							val r = pop()
+							push(Baf.BINOP(locals.temp(AstType.BOOL), l, CTYPES[op - Opcodes.IFEQ], r))
+							val condition = pop()
+							addJump(condition, labels.label(i.label))
 						}
 						in Opcodes.IFNULL..Opcodes.IFNONNULL -> {
-							addJump(AstExprUtils.BINOP(AstType.BOOL, stackPop(), CTYPES[op - Opcodes.IFNULL], AstExpr.LITERAL(null)), labels.label(i.label))
+							val l = pop()
+							push(Baf.IMMEDIATE(locals.temp(AstType.NULL), null))
+							val r = pop()
+							push(Baf.BINOP(locals.temp(AstType.BOOL), l, CTYPES[op - Opcodes.IFNULL], r))
+							val condition = pop()
+							addJump(condition, labels.label(i.label))
 						}
 						in Opcodes.IF_ICMPEQ..Opcodes.IF_ACMPNE -> {
-							val r = stackPop()
-							val l = stackPop()
-							addJump(AstExprUtils.BINOP(AstType.BOOL, l, CTYPES[op - Opcodes.IF_ICMPEQ], r), labels.label(i.label))
+							val r = pop()
+							val l = pop()
+							push(Baf.BINOP(locals.temp(AstType.BOOL), l, CTYPES[op - Opcodes.IF_ICMPEQ], r))
+							val condition = pop()
+							addJump(condition, labels.label(i.label))
 						}
 						Opcodes.GOTO -> addJump(null, labels.label(i.label))
 						Opcodes.JSR -> deprecated
@@ -748,8 +669,8 @@ private class BasicBlockBuilder(
 				}
 				is LookupSwitchInsnNode -> {
 					val labels2 = i.labels.cast<LabelNode>()
-					stmAdd(AstStm.SWITCH_GOTO(
-						stackPop(),
+					add(Baf.SWITCH_GOTO(
+						pop(),
 						labels.ref(labels.label(i.dflt)),
 						i.keys.cast<Int>().zip(labels2.map { labels.ref(labels.label(it)) })
 					))
@@ -759,8 +680,8 @@ private class BasicBlockBuilder(
 				}
 				is TableSwitchInsnNode -> {
 					val labels2 = i.labels.cast<LabelNode>()
-					stmAdd(AstStm.SWITCH_GOTO(
-						stackPop(),
+					add(Baf.SWITCH_GOTO(
+						pop(),
 						labels.ref(labels.label(i.dflt)),
 						(i.min..i.max).zip(labels2.map { labels.ref(labels.label(it)) })
 					))
@@ -770,7 +691,6 @@ private class BasicBlockBuilder(
 				}
 				is LabelNode -> {
 					if (DEBUG) println("Preserve because label")
-					restoreStack(preserveStack())
 					next = i
 					break@loop
 				}
@@ -791,16 +711,23 @@ private class BasicBlockBuilder(
 
 		//dumpExprs()
 
+		persistStack()
+
 		return BasicBlock(
 			input = input,
-			output = BasicBlock.Input(
-				stack.clone() as Stack<AstExpr>,
-				locals.locals.clone() as Map<Locals.ID, AstExpr.LocalExpr>
-			),
+			output = BasicBlock.Input(_bafStack.clone() as Stack<BafLocal>),
 			entry = entry,
-			stms = stms,
+			stms = _bafStms,
 			next = next,
 			outgoing = outgoing
 		)
+	}
+
+	private fun persistStack() {
+		val stack2 = _bafStack.toList().withIndex()
+		_bafStack.clear()
+		for ((index, item) in stack2) {
+			push(Baf.COPY(locals.frameVar(item.type, index), item))
+		}
 	}
 }
