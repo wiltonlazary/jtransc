@@ -53,35 +53,13 @@ fun Asm2Baf(clazz: AstType.REF, method: MethodNode): BafBody {
 
 	val body2 = method.instructions.toArray().toList().flatMap {
 		//println(basicBlocks.getBasicBlockForLabel(it))
-		val list = basicBlocks.getBasicBlockForLabel(it)?.stms?.toList() ?: listOf()
-		println("$it -> $list")
-		/*
-		val bb = basicBlocks.getBasicBlockForLabel(it)
-		val list = if (bb != null) {
-			if (bb !in writtenBasicBlocks) {
-				writtenBasicBlocks += bb
-				bb.stms.toList()
-			} else {
-				listOf()
-			}
+		basicBlocks.getBasicBlockForLabel(it)?.stms?.toList() ?: listOf()
+	}.filter {
+		if (it is Baf.LABEL) {
+			it.label.refs >= 1
 		} else {
-			listOf()
+			true
 		}
-		*/
-		/*
-		val list = basicBlocks.getBasicBlockForLabel(it)?.stms?.toList() ?: listOf()
-		println("$it -> $list")
-		for (i in list) {
-			if (i is Baf.LABEL) {
-				if (i.label in usedLabels) {
-					println("already used label!")
-					println("already used label!")
-				}
-				usedLabels += i.label
-			}
-		}
-		*/
-		list
 	}
 
 	return BafBody(
@@ -109,7 +87,7 @@ class BasicBlocks(
 
 	fun queue(entry: AbstractInsnNode, input: BasicBlock.Input) {
 		if (entry in blocks) return
-		val bb = BasicBlockBuilder(clazz, method, locals, labels, input.prefix, DEBUG).call(entry, input)
+		val bb = BasicBlockBuilder(clazz, method, locals, labels, input.prefix.clone() as ArrayList<Baf>, DEBUG).call(entry, input)
 		blocks[bb.entry] = bb
 		for (item in bb.outgoingAll) queue(item, bb.output)
 	}
@@ -158,17 +136,26 @@ data class BasicBlock(
 }
 
 class Labels {
-	val labels = hashMapOf<LabelNode, AstLabel>()
-	val referencedLabels = hashSetOf<AstLabel>()
-	val referencedHandlers = hashSetOf<LabelNode>()
+	var lastId = 0
+	val labels = hashMapOf<AbstractInsnNode, BafLabel>()
+	val referencedLabels = hashSetOf<BafLabel>()
+	val referencedHandlers = hashSetOf<AbstractInsnNode>()
 
-	fun label(label: LabelNode): AstLabel {
-		if (label !in labels) labels[label] = AstLabel("label_${label.label}")
+	fun label(label: AbstractInsnNode): BafLabel {
+		if (label !in labels) {
+			labels[label] = BafLabel("label_$lastId")
+			lastId++
+		}
 		return labels[label]!!
 	}
 
-	fun ref(label: AstLabel): AstLabel {
+	fun ref(label: AbstractInsnNode): BafLabel {
+		return ref(label(label))
+	}
+
+	fun ref(label: BafLabel): BafLabel {
 		referencedLabels += label
+		label.ref()
 		return label
 	}
 }
@@ -223,29 +210,6 @@ class BafLocals {
 	fun frameVar(type: AstType, index: Int): BafLocal {
 		return _alloc(index, type, BafLocal.Kind.FRAME)
 	}
-}
-
-fun fixType(type: AstType): AstType {
-	return if (type is AstType.Primitive) {
-		when (type) {
-			AstType.INT, AstType.FLOAT, AstType.DOUBLE, AstType.LONG -> type
-			else -> AstType.INT
-		}
-	} else {
-		AstType.OBJECT
-	}
-}
-
-fun nameType(type: AstType): String {
-	if (type is AstType.Primitive) {
-		return type.chstring
-	} else {
-		return "A"
-	}
-}
-
-class AsmMethodVisitor {
-
 }
 
 // http://stackoverflow.com/questions/4324321/java-local-variables-how-do-i-get-a-variable-name-or-type-using-its-index
@@ -533,13 +497,13 @@ private class BasicBlockBuilder(
 		}
 	}
 
-	fun addJump(cond: BafLocal?, label: AstLabel) {
+	fun addJump(cond: BafLocal?, trueLabel: BafLabel, falseLabel: BafLabel?) {
 		if (DEBUG) println("Preserve because jump")
-		labels.ref(label)
+		labels.ref(trueLabel)
 		if (cond != null) {
-			add(Baf.IF_GOTO(cond, label))
+			add(Baf.IF_GOTO(cond, trueLabel, falseLabel!!))
 		} else {
-			add(Baf.GOTO(label))
+			add(Baf.GOTO(trueLabel))
 		}
 	}
 
@@ -633,8 +597,10 @@ private class BasicBlockBuilder(
 		// RESTORE INPUTS
 		if (DEBUG && input.stack.size >= 2) println("---------")
 
+		add(Baf.LABEL(labels.label(entry)))
+
 		if (i is LabelNode) {
-			add(Baf.LABEL(labels.label(i)))
+			//add(Baf.LABEL(labels.label(i)))
 			i = i.next
 		}
 
@@ -681,7 +647,7 @@ private class BasicBlockBuilder(
 							push(Baf.BINOP(locals.temp(AstType.BOOL), l, CTYPES[op - Opcodes.IFEQ], r))
 							val condition = pop()
 							persistStack()
-							addJump(condition, labels.label(i.label))
+							addJump(condition, labels.ref(i.label), labels.ref(i.next))
 						}
 						in Opcodes.IFNULL..Opcodes.IFNONNULL -> {
 							val l = pop()
@@ -690,7 +656,7 @@ private class BasicBlockBuilder(
 							push(Baf.BINOP(locals.temp(AstType.BOOL), l, CTYPES[op - Opcodes.IFNULL], r))
 							val condition = pop()
 							persistStack()
-							addJump(condition, labels.label(i.label))
+							addJump(condition, labels.ref(i.label), labels.ref(i.next))
 						}
 						in Opcodes.IF_ICMPEQ..Opcodes.IF_ACMPNE -> {
 							val r = pop()
@@ -698,11 +664,11 @@ private class BasicBlockBuilder(
 							push(Baf.BINOP(locals.temp(AstType.BOOL), l, CTYPES[op - Opcodes.IF_ICMPEQ], r))
 							val condition = pop()
 							persistStack()
-							addJump(condition, labels.label(i.label))
+							addJump(condition, labels.ref(i.label), labels.ref(i.next))
 						}
 						Opcodes.GOTO -> {
 							persistStack()
-							addJump(null, labels.label(i.label))
+							addJump(null, labels.ref(i.label), null)
 						}
 						Opcodes.JSR -> deprecated
 						else -> invalidOp
@@ -710,12 +676,11 @@ private class BasicBlockBuilder(
 
 					if (op == Opcodes.GOTO) {
 						next = i.label
-						break@loop
 					} else {
-						//next = i.next
+						next = i.next
 						outgoing.add(i.label)
-						//break@loop
 					}
+					break@loop
 				}
 				is LookupSwitchInsnNode -> {
 					persistStack()
@@ -744,6 +709,7 @@ private class BasicBlockBuilder(
 				is LabelNode -> {
 					if (DEBUG) println("Preserve because label")
 					next = i
+					addJump(null, labels.label(i), null)
 					break@loop
 				}
 				is FrameNode -> Unit

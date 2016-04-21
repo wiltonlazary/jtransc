@@ -92,6 +92,7 @@ fun javaDump(type: AstType?): String {
 	return when (type) {
 		null -> "null"
 		is AstType.VOID -> "void"
+		is AstType.BOOL -> "bool"
 		is AstType.BYTE -> "byte"
 		is AstType.SHORT -> "short"
 		is AstType.CHAR -> "char"

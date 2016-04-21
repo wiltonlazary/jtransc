@@ -2,10 +2,18 @@ package com.jtransc.types
 
 import com.jtransc.ast.*
 import com.jtransc.ds.stripNulls
-import com.jtransc.error.invalidOp
-import com.jtransc.error.noImpl
 
-data class BafLocal(val index:Int, val type: AstType, val kind: Kind) {
+
+data class BafLabel(val name: String) {
+	val ast = AstLabel(name)
+	var refs = 0
+
+	fun ref() {
+		refs++
+	}
+}
+
+data class BafLocal(val index: Int, val type: AstType, val kind: Kind) {
 	enum class Kind { TEMP, LOCAL, FRAME }
 
 	val local = AstLocal(index, "${kind}_${type.primch}_$index", type)
@@ -26,7 +34,7 @@ class BafBody(val stms: List<Baf>, val locals: BafLocals, val traps: List<BafTra
 }
 
 
-class BafTrap(val start: AstLabel, val end: AstLabel, val handler: AstLabel, val exception: AstType.REF) {
+class BafTrap(val start: BafLabel, val end: BafLabel, val handler: BafLabel, val exception: AstType.REF) {
 }
 
 class BafList() : Iterable<Baf> {
@@ -99,6 +107,18 @@ sealed class Baf {
 
 	class BINOP(override val target: BafLocal, val left: BafLocal, val op: AstBinop, val right: BafLocal) : RESULT() {
 		override val readReferences = listOf(left, right)
+		val lt = left.type
+		val rt = right.type
+		val commonType: AstType = if (lt == AstType.LONG || rt == AstType.LONG) {
+			AstType.LONG
+		} else if (lt == AstType.BOOL || rt == AstType.BOOL) {
+			AstType.INT
+		} else {
+			lt
+		}
+		val isShift = (op == AstBinop.SHL || op == AstBinop.SHR || op == AstBinop.USHR)
+		val ltt = if (isShift) lt else commonType
+		val rtt = if (isShift) AstType.INT else commonType
 	}
 
 	class ARRAY_LOAD(override val target: BafLocal, val array: BafLocal, val index: BafLocal) : RESULT() {
@@ -165,14 +185,14 @@ sealed class Baf {
 	}
 	*/
 
-	class SWITCH_GOTO(val subject: BafLocal, val defaultLabel: AstLabel, val labels: List<Pair<Int, AstLabel>>) : Baf() {
+	class SWITCH_GOTO(val subject: BafLocal, val defaultLabel: BafLabel, val labels: List<Pair<Int, BafLabel>>) : Baf() {
 
 	}
 
-	class GOTO(val label: AstLabel) : Baf() {
+	class GOTO(val label: BafLabel) : Baf() {
 	}
 
-	class IF_GOTO(val cond: BafLocal, val label: AstLabel) : Baf() {
+	class IF_GOTO(val cond: BafLocal, val trueLabel: BafLabel, val falseLabel: BafLabel) : Baf() {
 		override val readReferences = listOf(cond)
 	}
 
@@ -217,7 +237,7 @@ sealed class Baf {
 		override val readReferences = info.readReferences
 	}
 
-	class LABEL(val label: AstLabel) : Baf() {
+	class LABEL(val label: BafLabel) : Baf() {
 	}
 
 	class CAUGHT_EXCEPTION(override val target: BafLocal) : RESULT() {
