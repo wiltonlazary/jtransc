@@ -25,10 +25,33 @@ fun Asm2Baf(clazz: AstType.REF, method: MethodNode): BafBody {
 		println("--------------------------------------------------------------------")
 	}
 
-	val tryCatchBlocks = method.tryCatchBlocks.cast<TryCatchBlockNode>()
 	val basicBlocks = BasicBlocks(clazz, method, DEBUG)
 	val locals = basicBlocks.locals
 	val labels = basicBlocks.labels
+
+	val referencedLabels = hashSetOf<LabelNode>()
+
+	for (i in method.instructions) {
+		if (i is JumpInsnNode) {
+			referencedLabels += i.label
+		} else if (i is TableSwitchInsnNode) {
+			referencedLabels += i.dflt
+			for (n in i.labels.cast<LabelNode>()) referencedLabels += n
+		} else if (i is LookupSwitchInsnNode) {
+			referencedLabels += i.dflt
+			for (n in i.labels.cast<LabelNode>()) referencedLabels += n
+		}
+	}
+
+	for (tcb in method.tryCatchBlocks.cast<TryCatchBlockNode>()) {
+		referencedLabels += tcb.end
+		referencedLabels += tcb.handler
+		referencedLabels += tcb.start
+	}
+
+	labels.referencedLabelsAsm = referencedLabels
+
+	val tryCatchBlocks = method.tryCatchBlocks.cast<TryCatchBlockNode>()
 
 	for (b in tryCatchBlocks) {
 		labels.ref(labels.label(b.start))
@@ -113,6 +136,7 @@ fun createFunctionPrefix(clazz: AstType.REF, method: MethodNode, locals: BafLoca
 		val type = arg.type
 		stms.add(Baf.PARAM(locals.local(type, idx), arg))
 		idx++
+		if (type.isLongOrDouble()) idx++
 	}
 
 	return BasicBlock.Input(Stack(), stms)
@@ -140,6 +164,7 @@ class Labels {
 	val labels = hashMapOf<AbstractInsnNode, BafLabel>()
 	val referencedLabels = hashSetOf<BafLabel>()
 	val referencedHandlers = hashSetOf<AbstractInsnNode>()
+	lateinit var referencedLabelsAsm: HashSet<LabelNode>
 
 	fun label(label: AbstractInsnNode): BafLabel {
 		if (label !in labels) {
@@ -193,7 +218,18 @@ class BafLocals {
 	var tempID = 0
 
 	fun _alloc(index:Int, type:AstType, kind: BafLocal.Kind): BafLocal {
-		val type2 = if (type is AstType.Primitive) type else AstType.OBJECT
+		val type2: AstType = when (type) {
+			is AstType.BOOL -> AstType.INT
+			is AstType.BYTE -> AstType.INT
+			is AstType.SHORT -> AstType.INT
+			is AstType.CHAR -> AstType.INT
+			is AstType.INT -> AstType.INT
+			is AstType.LONG -> AstType.LONG
+			is AstType.FLOAT -> AstType.FLOAT
+			is AstType.DOUBLE -> AstType.DOUBLE
+			is AstType.Primitive -> type
+			else -> AstType.OBJECT
+		}
 		val idd = ID(index, type2, kind)
 		if (idd !in locals) locals[idd] = BafLocal(index, type2, kind)
 		return locals[idd]!!
@@ -310,14 +346,14 @@ private class BasicBlockBuilder(
 
 	private fun pushCast(type: AstType) {
 		val r = pop()
-		push(Baf.CAST(locals.temp(type), r))
+		push(Baf.CAST(locals.temp(type), r, type))
 	}
 
 	fun arrayLoad(elementType: AstType): Unit {
 		val bafIndex = pop()
 		val bafArray = pop()
 		val target = locals.temp(elementType)
-		add(Baf.ARRAY_LOAD(target, bafArray, bafIndex))
+		add(Baf.ARRAY_LOAD(target, bafArray, elementType.array, bafIndex))
 		push(target)
 	}
 
@@ -325,7 +361,7 @@ private class BasicBlockBuilder(
 		val bafExpr = pop()
 		val bafIndex = pop()
 		val bafArray = pop()
-		add(Baf.ARRAY_STORE(bafArray, elementType, bafIndex, bafExpr))
+		add(Baf.ARRAY_STORE(bafArray, elementType.array, elementType, bafIndex, bafExpr))
 	}
 
 	private var stackPopToLocalsItemsCount = 0
@@ -644,7 +680,7 @@ private class BasicBlockBuilder(
 							val l = pop()
 							push(Baf.IMMEDIATE(locals.temp(AstType.INT), 0))
 							val r = pop()
-							push(Baf.BINOP(locals.temp(AstType.BOOL), l, CTYPES[op - Opcodes.IFEQ], r))
+							push(Baf.BINOP(locals.temp(AstType.INT), l, CTYPES[op - Opcodes.IFEQ], r))
 							val condition = pop()
 							persistStack()
 							addJump(condition, labels.ref(i.label), labels.ref(i.next))
@@ -653,7 +689,7 @@ private class BasicBlockBuilder(
 							val l = pop()
 							push(Baf.IMMEDIATE(locals.temp(AstType.NULL), null))
 							val r = pop()
-							push(Baf.BINOP(locals.temp(AstType.BOOL), l, CTYPES[op - Opcodes.IFNULL], r))
+							push(Baf.BINOP(locals.temp(AstType.INT), l, CTYPES[op - Opcodes.IFNULL], r))
 							val condition = pop()
 							persistStack()
 							addJump(condition, labels.ref(i.label), labels.ref(i.next))
@@ -661,7 +697,7 @@ private class BasicBlockBuilder(
 						in Opcodes.IF_ICMPEQ..Opcodes.IF_ACMPNE -> {
 							val r = pop()
 							val l = pop()
-							push(Baf.BINOP(locals.temp(AstType.BOOL), l, CTYPES[op - Opcodes.IF_ICMPEQ], r))
+							push(Baf.BINOP(locals.temp(AstType.INT), l, CTYPES[op - Opcodes.IF_ICMPEQ], r))
 							val condition = pop()
 							persistStack()
 							addJump(condition, labels.ref(i.label), labels.ref(i.next))
@@ -707,10 +743,13 @@ private class BasicBlockBuilder(
 					break@loop
 				}
 				is LabelNode -> {
-					if (DEBUG) println("Preserve because label")
-					next = i
-					addJump(null, labels.label(i), null)
-					break@loop
+					if (i in labels.referencedLabelsAsm) {
+						if (DEBUG) println("Preserve because label")
+						next = i
+						persistStack()
+						addJump(null, labels.label(i), null)
+						break@loop
+					}
 				}
 				is FrameNode -> Unit
 				is LdcInsnNode -> handleLdc(i)
@@ -726,6 +765,8 @@ private class BasicBlockBuilder(
 			}
 			i = i.next
 		}
+
+		persistStack()
 
 		//dumpExprs()
 

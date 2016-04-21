@@ -48,6 +48,8 @@ fun dump(stm: AstStm): Indenter {
 			is AstStm.LINE -> line("LINE(${stm.line})")
 			is AstStm.NOP -> line("NOP")
 			is AstStm.THROW -> line("throw ${dump(stm.value)};")
+			is AstStm.MONITOR_ENTER -> line("#monitor_enter ${dump(stm.expr)}")
+			is AstStm.MONITOR_EXIT -> line("#monitor_exit ${dump(stm.expr)}")
 			else -> noImpl("$stm")
 		}
 	}

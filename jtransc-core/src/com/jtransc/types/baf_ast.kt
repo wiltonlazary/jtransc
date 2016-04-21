@@ -21,17 +21,26 @@ fun List<Baf>.toAst(): AstStm {
 		when (item) {
 			is Baf.LABEL -> add(AstStm.STM_LABEL(item.label.ast))
 			is Baf.LINE -> add(AstStm.LINE(item.line))
-			is Baf.THIS -> addSetCasted(item.target, AstExpr.THIS((item.target.type as AstType.REF).name))
-			is Baf.PARAM -> addSetCasted(item.target, AstExpr.PARAM(item.argument))
+			is Baf.THIS -> {
+				// @TODO: Strip this after SSA
+				//if (item.target.readNodes.size >= 1) {
+					addSetCasted(item.target, AstExpr.THIS((item.target.type as AstType.REF).name))
+				//}
+			}
+			is Baf.PARAM -> {
+				//if (item.target.readNodes.size >= 1) {
+					addSetCasted(item.target, AstExpr.PARAM(item.argument))
+				//}
+			}
 			is Baf.IMMEDIATE -> addSetCasted(item.target, AstExpr.LITERAL(item.value))
 		// @TODO: Unify?
 			is Baf.COPY -> addSetCasted(item.target, item.right.expr)
-			is Baf.CAST -> addSetCasted(item.target, item.right.expr)
+			is Baf.CAST -> addSetCasted(item.target, cast(item.castType, item.right.expr))
 			is Baf.CHECK_CAST -> addSetCasted(item.target, cast(item.type, item.instance.expr))
 			is Baf.UNOP -> addSetCasted(item.target, AstExpr.UNOP(item.op, item.right.expr))
 			is Baf.BINOP -> {
 				addSetCasted(item.target, AstExpr.BINOP(
-					item.target.type,
+					item.resultType,
 					cast(item.ltt, item.left.expr),
 					item.op,
 					cast(item.rtt, item.right.expr)
@@ -44,11 +53,11 @@ fun List<Baf>.toAst(): AstStm {
 			is Baf.FIELD_INSTANCE_SET -> add(AstStm.SET_FIELD_INSTANCE(item.field, cast(item.field.containingTypeRef, item.instance.expr), cast(item.field.type, item.value.expr)))
 
 			is Baf.ARRAY_LENGTH -> addSetCasted(item.target, AstExpr.ARRAY_LENGTH(item.array.expr))
-			is Baf.ARRAY_LOAD -> addSetCasted(item.target, AstExpr.ARRAY_ACCESS(cast(item.target.type.array, item.array.expr), item.index.expr))
-			is Baf.ARRAY_STORE -> add(AstStm.SET_ARRAY(cast(item.elementType.array, item.array.expr), item.index.expr, item.expr.expr))
+			is Baf.ARRAY_LOAD -> addSetCasted(item.target, AstExpr.ARRAY_ACCESS(cast(item.arrayType, item.array.expr), item.index.expr))
+			is Baf.ARRAY_STORE -> add(AstStm.SET_ARRAY(cast(item.arrayType, item.array.expr), item.index.expr, item.expr.expr))
 
 			is Baf.IF_GOTO -> {
-				add(AstStm.IF_GOTO(item.trueLabel.ast, item.cond.expr))
+				add(AstStm.IF_GOTO(item.trueLabel.ast, cast(AstType.BOOL, item.cond.expr)))
 				add(AstStm.IF_GOTO(item.falseLabel.ast, null))
 			}
 			is Baf.GOTO -> add(AstStm.IF_GOTO(item.label.ast, null))
@@ -56,7 +65,7 @@ fun List<Baf>.toAst(): AstStm {
 			is Baf.IINCR -> add(AstStm.SET(item.local.expr, item.local.expr + AstExpr.LITERAL(item.incr)))
 			is Baf.NEW -> add(AstStm.SET(item.target.expr, AstExpr.NEW(item.type)))
 			is Baf.NEW_ARRAY -> add(AstStm.SET(item.target.expr, AstExpr.NEW_ARRAY(item.arrayType, item.lengths.map { it.expr })))
-			is Baf.INSTANCE_OF -> add(AstStm.SET(item.target.expr, AstExpr.INSTANCE_OF(item.instance.expr, item.checkType)))
+			is Baf.INSTANCE_OF -> addSetCasted(item.target, AstExpr.INSTANCE_OF(item.instance.expr, item.checkType))
 			is Baf.MONITOR_ENTER -> add(AstStm.MONITOR_ENTER(item.instance.expr))
 			is Baf.MONITOR_EXIT -> add(AstStm.MONITOR_EXIT(item.instance.expr))
 			is Baf.CAUGHT_EXCEPTION -> add(AstStm.SET(item.target.expr, cast(item.target.type, AstExpr.CAUGHT_EXCEPTION(item.target.type))))

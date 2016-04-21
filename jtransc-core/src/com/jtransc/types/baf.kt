@@ -13,6 +13,8 @@ data class BafLabel(val name: String) {
 	}
 }
 
+data class BafLocalRef(var local: BafLocal)
+
 data class BafLocal(val index: Int, val type: AstType, val kind: Kind) {
 	enum class Kind { TEMP, LOCAL, FRAME }
 
@@ -101,7 +103,7 @@ sealed class Baf {
 		override val readReferences = listOf(right)
 	}
 
-	class CAST(override val target: BafLocal, val right: BafLocal) : RESULT() {
+	class CAST(override val target: BafLocal, val right: BafLocal, val castType: AstType) : RESULT() {
 		override val readReferences = listOf(right)
 	}
 
@@ -119,17 +121,18 @@ sealed class Baf {
 		val isShift = (op == AstBinop.SHL || op == AstBinop.SHR || op == AstBinop.USHR)
 		val ltt = if (isShift) lt else commonType
 		val rtt = if (isShift) AstType.INT else commonType
+		val resultType = if (op in AstBinop.BOOL_RESULT) AstType.BOOL else commonType
 	}
 
-	class ARRAY_LOAD(override val target: BafLocal, val array: BafLocal, val index: BafLocal) : RESULT() {
+	class ARRAY_LOAD(override val target: BafLocal, val array: BafLocal, val arrayType: AstType.ARRAY, val index: BafLocal) : RESULT() {
 		override val readReferences = listOf(array, index)
 	}
 
-	class FIELD_STATIC_GET(override val target: BafLocal, val field: AstFieldRef) : RESULT() {
+	class ARRAY_STORE(val array: BafLocal, val arrayType: AstType.ARRAY, val elementType: AstType, val index: BafLocal, val expr: BafLocal) : Baf() {
+		override val readReferences = listOf<BafLocal>(array, index, expr)
 	}
 
-	class ARRAY_STORE(val array: BafLocal, val elementType: AstType, val index: BafLocal, val expr: BafLocal) : Baf() {
-		override val readReferences = listOf<BafLocal>(array, index, expr)
+	class FIELD_STATIC_GET(override val target: BafLocal, val field: AstFieldRef) : RESULT() {
 	}
 
 	class FIELD_INSTANCE_GET(override val target: BafLocal, val field: AstFieldRef, val instance: BafLocal) : RESULT() {

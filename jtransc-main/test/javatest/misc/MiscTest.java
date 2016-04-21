@@ -45,6 +45,8 @@ public class MiscTest {
         accessInterfaceStaticFields();
         tryCatchTest();
         testRandom();
+	    testClone3Array();
+	    testClone2Array();
         testCloneArray();
         //testMd5();
         //testSha1();
@@ -591,7 +593,18 @@ public class MiscTest {
         System.out.println("Random:" + random.nextInt(10));
     }
 
-    private void testCloneArray() {
+	private void testClone3Array() {
+		byte a = -1;
+		System.out.println(a);
+	}
+
+	private void testClone2Array() {
+		byte[] bytes = new byte[]{1};
+		bytes[0] = -1;
+		System.out.println(bytes[0]);
+	}
+
+	private void testCloneArray() {
         byte[] bytes = new byte[]{1, 2, 3, 4};
         byte[] clonedBytes = bytes.clone();
         bytes[0] = -1;
@@ -638,9 +651,9 @@ public class MiscTest {
 
 	private void testCrc32() {
 		CRC32 crc32 = new CRC32();
-		System.out.println(crc32.getValue());
+		System.out.println("CRC32:" + crc32.getValue());
 		crc32.update(new byte[] { 1, 2, 3, 4 });
-		System.out.println(crc32.getValue());
+		System.out.println("CRC32:" + crc32.getValue());
 	}
 
     private void testCharset() {

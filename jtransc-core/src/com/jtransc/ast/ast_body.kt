@@ -21,6 +21,10 @@ enum class AstBinop(val symbol: String, val str: String) {
 
 	companion object {
 		//val operators = values.flatMap { listOf(Pair(it.symbol, it), Pair(it.str, it)) }.toMap()
+		val SHIFTS = setOf(SHL, SHR, USHR)
+		val COMPARISONS = setOf(EQ, NE, GE, LE, LT, GT)
+		val LOGIC = setOf(BAND, BOR)
+		val BOOL_RESULT = COMPARISONS + LOGIC
 	}
 }
 
