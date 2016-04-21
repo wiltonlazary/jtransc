@@ -59,6 +59,7 @@ class GenHaxeGen(
 
 	internal fun _write(): GenHaxe.ProgramInfo {
 		val vfs = srcFolder
+		println("VFS: $vfs")
 		for (clazz in program.classes.filter { !it.isNative }) {
 			if (clazz.implCode != null) {
 				vfs[clazz.name.haxeFilePath] = clazz.implCode!!
@@ -438,7 +439,7 @@ class GenHaxeGen(
 			}
 			is AstExpr.CALL_BASE -> {
 				// Determine method to call!
-				val e2 = if (e is AstExpr.CALL_SPECIAL) AstExprUtils.RESOLVE_SPECIAL(program, e, context) else e
+				val e2 = if (e is AstExpr.CALL_INSTANCE && (e.isSpecial == true)) AstExprUtils.RESOLVE_SPECIAL(program, e, context) else e
 				val method = fixMethod(e2.method)
 				val refMethod = program.get(method) ?: invalidOp("Can't find method: $method while generating $context")
 				val clazz = method.containingClassType

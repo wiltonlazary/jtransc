@@ -156,7 +156,7 @@ sealed class Baf {
 		override val readReferences = listOf<BafLocal>(array)
 	}
 
-	class NEW(override val target: BafLocal) : RESULT() {
+	class NEW(override val target: BafLocal, val type: AstType.REF) : RESULT() {
 	}
 
 	class NEW_ARRAY(override val target: BafLocal, val arrayType: AstType.ARRAY, val lengths: List<BafLocal>) : RESULT() {
@@ -196,7 +196,7 @@ sealed class Baf {
 		override val readReferences = listOf(cond)
 	}
 
-	class CHECK_CAST(override val target: BafLocal, val instance: BafLocal) : RESULT() {
+	class CHECK_CAST(override val target: BafLocal, val instance: BafLocal, val type: AstType) : RESULT() {
 		override val readReferences = listOf(instance)
 	}
 

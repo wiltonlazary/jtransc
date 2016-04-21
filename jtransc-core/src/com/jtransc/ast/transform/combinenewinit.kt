@@ -72,11 +72,17 @@ object CombineNewInitTransform : AstTransform() {
 	}
 
 	override fun invoke(body: AstBody): AstBody {
+		/*
 		if (body.stm is AstStm.STMS) {
 			val stms = body.stm.stms.toCollection(arrayListOf<AstStm>())
 			transform(stms)
 			return AstBody(AstStm.STMS(stms.filter { it !is AstStm.NOP }), body.locals, body.traps)
 		}
+
+		return body
+		*/
+
+		// Disable this!
 
 		return body
 	}

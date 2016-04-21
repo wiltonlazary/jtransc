@@ -167,9 +167,9 @@ interface AstExpr : AstElement {
 		override val type = method.type.ret
 	}
 
-	data class CALL_SPECIAL(val obj: AstExpr, override val method: AstMethodRef, override val args: List<AstExpr>, override val isSpecial: Boolean = false) : CALL_BASE {
-		override val type = method.type.ret
-	}
+	//data class CALL_SPECIAL(val obj: AstExpr, override val method: AstMethodRef, override val args: List<AstExpr>, override val isSpecial: Boolean = false) : CALL_BASE {
+	//	override val type = method.type.ret
+	//}
 
 	data class CALL_SUPER(val obj: AstExpr, val target: FqName, override val method: AstMethodRef, override val args: List<AstExpr>, override val isSpecial: Boolean = false) : CALL_BASE {
 		override val type = method.type.ret
@@ -321,7 +321,7 @@ object AstExprUtils {
 		return AstExpr.BINOP(type, l, op, r)
 	}
 
-	fun RESOLVE_SPECIAL(program: AstProgram, e: AstExpr.CALL_SPECIAL, context: AstGenContext): AstExpr.CALL_BASE {
+	fun RESOLVE_SPECIAL(program: AstProgram, e: AstExpr.CALL_INSTANCE, context: AstGenContext): AstExpr.CALL_BASE {
 		val clazz = program[e.method.classRef]
 		val refMethod = program.get(e.method) ?: invalidOp("Can't find method: ${e.method} while generating $context")
 		// https://docs.oracle.com/javase/specs/jvms/se7/html/jvms-6.html#jvms-6.5.invokespecial

@@ -6,8 +6,10 @@ public class AstExampleTest2 {
 		return ordinal;
 	}
 	*/
-	public boolean equals(Object obj) {
-		return (this == obj);
+	//public boolean equals(Object obj) {
+		//return (this == obj);
+	//}
+	public void test() {
+		throw new RuntimeException("hello");
 	}
-
 }

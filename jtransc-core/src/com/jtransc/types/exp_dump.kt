@@ -80,7 +80,7 @@ fun dump(expr: AstExpr?): String {
 				is AstExpr.CALL_INSTANCE -> dump(expr.obj) + "." + expr.method.name + "($argsString)"
 				is AstExpr.CALL_SUPER -> "super.${expr.method.name}($argsString)"
 				is AstExpr.CALL_STATIC -> expr.clazz.fqname + "." + expr.method.name + "($argsString)"
-				is AstExpr.CALL_SPECIAL -> "special." + dump(expr.obj) + "." + expr.method.name + "($argsString)"
+				//is AstExpr.CALL_SPECIAL -> "special." + dump(expr.obj) + "." + expr.method.name + "($argsString)"
 				else -> invalidOp
 			}
 		}

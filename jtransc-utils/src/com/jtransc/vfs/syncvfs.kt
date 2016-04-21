@@ -355,6 +355,8 @@ private class AccessSyncVfs(val parent: SyncVfs, val path: String) : ProxySyncVf
 
 		return SyncVfsStat(SyncVfsFile(this, "/" + statFilePath.removePrefix(thisPath)), stat.size, stat.mtime, stat.isDirectory, true)
 	}
+
+	override fun toString(): String = "AccessSyncVfs($parent, $path)"
 }
 
 private class _LogSyncVfs(val parent: SyncVfs) : ProxySyncVfs() {

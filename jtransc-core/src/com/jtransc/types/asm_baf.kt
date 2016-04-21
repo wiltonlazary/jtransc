@@ -455,9 +455,9 @@ private class BasicBlockBuilder(
 	fun handleType(i: TypeInsnNode) {
 		val type = AstType.REF_INT(i.desc)
 		when (i.opcode) {
-			Opcodes.NEW -> push(Baf.NEW(locals.temp(type as AstType.REF)))
+			Opcodes.NEW -> push(Baf.NEW(locals.temp(type as AstType.REF), type))
 			Opcodes.ANEWARRAY -> push(Baf.NEW_ARRAY(locals.temp(type.array), type.array, listOf(pop())))
-			Opcodes.CHECKCAST -> push(Baf.CHECK_CAST(locals.temp(type), pop()))
+			Opcodes.CHECKCAST -> push(Baf.CHECK_CAST(locals.temp(type), pop(), type))
 			Opcodes.INSTANCEOF -> push(Baf.INSTANCE_OF(locals.temp(AstType.BOOL), pop(), type))
 			else -> invalidOp("$i")
 		}
