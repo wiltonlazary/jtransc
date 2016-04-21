@@ -396,6 +396,7 @@ class GenHaxeGen(
 	fun genExpr2(e: AstExpr): String {
 		return when (e) {
 			is AstExpr.THIS -> "this"
+			//is AstExpr.CLASS_CONSTANT -> "HaxeNatives.resolveClass(${e.classType.mangle().quote()})"
 			is AstExpr.LITERAL -> {
 				val value = e.value
 				if (value is String) {
@@ -521,7 +522,6 @@ class GenHaxeGen(
 					}
 				}
 			}
-			is AstExpr.CLASS_CONSTANT -> "HaxeNatives.resolveClass(${e.classType.mangle().quote()})"
 			is AstExpr.CAUGHT_EXCEPTION -> "J__exception__"
 			is AstExpr.METHOD_CLASS -> {
 				val methodInInterfaceRef = e.methodInInterfaceRef

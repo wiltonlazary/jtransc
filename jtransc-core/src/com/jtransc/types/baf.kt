@@ -5,10 +5,10 @@ import com.jtransc.ds.stripNulls
 import com.jtransc.error.invalidOp
 import com.jtransc.error.noImpl
 
-class BafLocal(val index:Int, val type: AstType, val kind: Kind) {
+data class BafLocal(val index:Int, val type: AstType, val kind: Kind) {
 	enum class Kind { TEMP, LOCAL, FRAME }
 
-	val local = AstLocal(index, "${kind}_$index", type)
+	val local = AstLocal(index, "${kind}_${type.primch}_$index", type)
 	val expr = AstExpr.LOCAL(local)
 	val writeNodes = arrayListOf<Baf>()
 	val readNodes = arrayListOf<Baf>()
@@ -79,7 +79,7 @@ sealed class Baf {
 	class IMMEDIATE(override val target: BafLocal, val value: Any?) : RESULT() {
 	}
 
-	class PARAM(override val target: BafLocal, val paramIndex: Int) : RESULT() {
+	class PARAM(override val target: BafLocal, val argument: AstArgument) : RESULT() {
 	}
 
 	class THIS(override val target: BafLocal) : RESULT() {
@@ -108,11 +108,11 @@ sealed class Baf {
 	class FIELD_STATIC_GET(override val target: BafLocal, val field: AstFieldRef) : RESULT() {
 	}
 
-	class ARRAY_STORE(val array: BafLocal, val index: BafLocal, val expr: BafLocal) : Baf() {
+	class ARRAY_STORE(val array: BafLocal, val elementType: AstType, val index: BafLocal, val expr: BafLocal) : Baf() {
 		override val readReferences = listOf<BafLocal>(array, index, expr)
 	}
 
-	class FIELD_INSTANCE_GET(override val target: BafLocal, val ref: AstFieldRef, val instance: BafLocal) : RESULT() {
+	class FIELD_INSTANCE_GET(override val target: BafLocal, val field: AstFieldRef, val instance: BafLocal) : RESULT() {
 		override val readReferences = listOf<BafLocal>(instance)
 	}
 
@@ -120,7 +120,7 @@ sealed class Baf {
 		override val readReferences = listOf<BafLocal>(value)
 	}
 
-	class FIELD_INSTANCE_SET(val ref: AstFieldRef, val instance: BafLocal, val value: BafLocal) : Baf() {
+	class FIELD_INSTANCE_SET(val field: AstFieldRef, val instance: BafLocal, val value: BafLocal) : Baf() {
 		override val readReferences = listOf<BafLocal>(instance, value)
 	}
 
@@ -139,14 +139,14 @@ sealed class Baf {
 	class NEW(override val target: BafLocal) : RESULT() {
 	}
 
-	class NEW_ARRAY(override val target: BafLocal, val lengths: List<BafLocal>) : RESULT() {
+	class NEW_ARRAY(override val target: BafLocal, val arrayType: AstType.ARRAY, val lengths: List<BafLocal>) : RESULT() {
 		override val readReferences = listOf<BafLocal>() + lengths
 	}
 
 	class LINE(val line: Int) : Baf() {
 	}
 
-	class RETURN(val retval: BafLocal) : Baf() {
+	class RETURN(val retval: BafLocal, val rettype: AstType) : Baf() {
 		override val readReferences = listOf(retval)
 	}
 
@@ -165,7 +165,7 @@ sealed class Baf {
 	}
 	*/
 
-	class SWITCH_GOTO(val base: BafLocal, val defaultLabel: AstLabel, labels: List<Pair<Int, AstLabel>>) : Baf() {
+	class SWITCH_GOTO(val subject: BafLocal, val defaultLabel: AstLabel, val labels: List<Pair<Int, AstLabel>>) : Baf() {
 
 	}
 
@@ -180,16 +180,8 @@ sealed class Baf {
 		override val readReferences = listOf(instance)
 	}
 
-	class INSTANCE_OF(override val target: BafLocal, val instance: BafLocal) : RESULT() {
+	class INSTANCE_OF(override val target: BafLocal, val instance: BafLocal, val checkType: AstType) : RESULT() {
 		override val readReferences = listOf(instance)
-	}
-
-	class INVOKE_VOID(val clazz: AstType.REF, val instance: BafLocal?, val methodRef: AstMethodRef, val args: List<BafLocal>, val isSpecial: Boolean) : Baf() {
-		override val readReferences = (listOf(instance).stripNulls() + args)
-	}
-
-	class INVOKE(override val target: BafLocal, val clazz: AstType.REF, val instance: BafLocal?, val methodRef: AstMethodRef, val args: List<BafLocal>, val isSpecial: Boolean) : RESULT() {
-		override val readReferences = (listOf(instance).stripNulls() + args)
 	}
 
 	class IINCR(val local: BafLocal, val incr: Int) : Baf() {
@@ -197,8 +189,32 @@ sealed class Baf {
 		override val readReferences: List<BafLocal> = listOf(local)
 	}
 
-	class INVOKE_DYNAMIC(override val target: BafLocal, val astMethodWithoutClassRef: AstMethodWithoutClassRef, val ast: AstMethodRef, val map: List<Any?>) : RESULT() {
+	class INVOKEINFO(val clazz: AstType.REF, val instance: BafLocal?, val methodRef: AstMethodRef, val args: List<BafLocal>, val isSpecial: Boolean) {
+		val readReferences = (listOf(instance).stripNulls() + args)
+	}
 
+	interface INVOKELIKE {
+		val info: INVOKEINFO
+	}
+
+	class INVOKEDYNAMICINFO(val astMethodWithoutClassRef: AstMethodWithoutClassRef, val ast: AstMethodRef, val map: List<Any?>) {
+		val readReferences = listOf<BafLocal>()
+	}
+
+	class INVOKE_VOID(override val info: INVOKEINFO) : Baf(), INVOKELIKE {
+		override val readReferences = info.readReferences
+	}
+
+	class INVOKE(override val target: BafLocal, override val info: INVOKEINFO) : RESULT(), INVOKELIKE {
+		override val readReferences = info.readReferences
+	}
+
+	class INVOKEDYNAMIC_VOID(override val target: BafLocal, val info: INVOKEDYNAMICINFO) : RESULT() {
+		override val readReferences = info.readReferences
+	}
+
+	class INVOKEDYNAMIC(override val target: BafLocal, val info: INVOKEDYNAMICINFO) : RESULT() {
+		override val readReferences = info.readReferences
 	}
 
 	class LABEL(val label: AstLabel) : Baf() {
@@ -215,39 +231,3 @@ sealed class Baf {
 //	return AstExpr.LOCAL(this.local)
 //}
 
-fun Baf.toAst(): AstStm {
-	return when (this) {
-		is Baf.THIS -> AstStm.SET(this.target.expr, AstExpr.THIS((this.target.type as AstType.REF).name))
-		is Baf.IMMEDIATE -> AstStm.SET(this.target.expr, AstExpr.LITERAL(this.value))
-		is Baf.LABEL -> AstStm.STM_LABEL(this.label)
-		is Baf.LINE -> AstStm.LINE(this.line)
-		is Baf.COPY -> AstStm.SET(this.target.expr, this.right.expr)
-		is Baf.UNOP -> AstStm.SET(this.target.expr, AstExpr.UNOP(this.op, this.right.expr))
-		is Baf.BINOP -> AstStm.SET(this.target.expr, AstExpr.BINOP(target.type, this.left.expr, this.op, this.right.expr))
-		is Baf.INVOKE_VOID -> {
-			if (this.instance == null) {
-				//AstStm.STM_EXPR(AstExpr.CALL_STATIC())
-				noImpl
-			} else {
-				AstStm.STM_EXPR(AstExpr.CALL_INSTANCE(instance.expr, this.methodRef, this.args.map { it.expr }, isSpecial = this.isSpecial))
-			}
-		}
-		is Baf.RETURN_VOID -> AstStm.RETURN(null)
-		is Baf.RETURN -> AstStm.RETURN(this.retval.expr)
-		is Baf.FIELD_STATIC_GET -> AstStm.SET(this.target.expr, AstExpr.STATIC_FIELD_ACCESS(this.field))
-		is Baf.FIELD_STATIC_SET -> AstStm.SET_FIELD_STATIC(this.field, this.value.expr)
-		else -> {
-			invalidOp("Can't handle $this")
-		}
-	}
-}
-
-fun List<Baf>.toAst(): AstStm = AstStm.STMS(this.map { it.toAst() })
-
-fun BafTrap.toAst(): AstTrap = AstTrap(this.start, this.end, this.handler, this.exception)
-
-fun BafBody.toAst() : AstBody = AstBody(
-	this.stms.toAst(),
-	locals.getAllLocals().map { it.local },
-	this.traps.map { it.toAst() }
-)

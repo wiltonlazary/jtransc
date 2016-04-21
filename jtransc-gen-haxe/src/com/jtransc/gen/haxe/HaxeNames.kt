@@ -5,6 +5,7 @@ import com.jtransc.error.invalidOp
 import com.jtransc.error.noImpl
 import com.jtransc.error.unexpected
 import com.jtransc.text.escape
+import com.jtransc.text.quote
 
 
 val HaxeKeywords = setOf(
@@ -206,6 +207,9 @@ class HaxeNames(val program: AstResolver) {
 			"Math.NaN"
 		} else {
 			"$value"
+		}
+		is AstType -> {
+			"HaxeNatives.resolveClass(${value.mangle().quote()})"
 		}
 		else -> throw NotImplementedError("Literal of type $value")
 	}

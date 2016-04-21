@@ -50,11 +50,12 @@ object CombineNewInitTransform : AstTransform() {
 						if (callLocal in newToLocal) {
 							val (instantiateIndex, instantiateType) = newToLocal[callLocal]!!
 							if (callExpr.method.containingClass != instantiateType.name) {
-								throw AssertionError("Unexpected new + <init> call!")
+								//throw AssertionError("Unexpected new + <init> call!")
+							} else {
+								stms[instantiateIndex] = AstStm.NOP
+								stms[n] = AstStm.SET_NEW_WITH_CONSTRUCTOR(callLocal, instantiateType, callExpr.method, callExpr.args)
+								newToLocal.remove(callLocal)
 							}
-							stms[instantiateIndex] = AstStm.NOP
-							stms[n] = AstStm.SET_NEW_WITH_CONSTRUCTOR(callLocal, instantiateType, callExpr.method, callExpr.args)
-							newToLocal.remove(callLocal)
 						}
 					}
 				}

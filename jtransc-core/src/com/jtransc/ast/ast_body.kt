@@ -123,10 +123,12 @@ interface AstExpr : AstElement {
 		val value: Any?
 	}
 
+	/*
 	data class CLASS_CONSTANT(val classType: AstType) : AstExpr, LiteralExpr {
 		override val value = classType
 		override val type: AstType = AstType.GENERIC(AstType.REF("java.lang.Class"), listOf(classType))
 	}
+	*/
 
 	data class METHODTYPE_CONSTANT(val methodType: AstType.METHOD) : AstExpr, LiteralExpr {
 		override val value = methodType
@@ -352,6 +354,7 @@ object AstExprUtils {
 
 operator fun AstExpr.plus(that: AstExpr) = AstExpr.BINOP(this.type, this, AstBinop.ADD, that)
 operator fun AstExpr.minus(that: AstExpr) = AstExpr.BINOP(this.type, this, AstBinop.SUB, that)
+operator fun AstExpr.times(that: AstExpr) = AstExpr.BINOP(this.type, this, AstBinop.MUL, that)
 
 open class AstTransformer {
 	open fun visit(type: AstType) {

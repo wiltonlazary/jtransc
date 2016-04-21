@@ -10,6 +10,12 @@ import com.jtransc.text.readUntil
 import java.io.Serializable
 import java.util.*
 
+
+val AstType.primch: Char get() = when (this) {
+	is AstType.Primitive -> this.ch
+	else -> 'A'
+}
+
 interface AstType {
 	abstract class Primitive(underlyingClassStr: String, val ch: Char, val shortName: String) : AstType {
 		val underlyingClass: FqName = underlyingClassStr.fqname
@@ -166,10 +172,14 @@ interface AstType {
 			is Float -> FLOAT
 			is Double -> DOUBLE
 			is String -> STRING
+			is AstType.REF -> CLASS
+			is AstType.ARRAY -> CLASS
 			else -> invalidOp("Literal type: ${value.javaClass} : $value")
 		}
 	}
 }
+
+val AstType.array: AstType.ARRAY get() = AstType.ARRAY(this)
 
 fun _castLiteral(value: Int, to: AstType): Any {
 	return when (to) {
