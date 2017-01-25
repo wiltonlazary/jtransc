@@ -171,17 +171,23 @@ fun ClassNode.getAnnotations(types: AstTypes) = getAnnotations(this.visibleAnnot
 fun MethodNode.getAnnotations(types: AstTypes) = getAnnotations(this.visibleAnnotations, this.invisibleAnnotations, types)
 fun FieldNode.getAnnotations(types: AstTypes) = getAnnotations(this.visibleAnnotations, this.invisibleAnnotations, types)
 
-fun MethodNode.getParameterAnnotations(types: AstTypes): List<List<AstAnnotation>> {
-	val type = types.demangleMethod(this.desc)
-
-	return this.visibleParameterAnnotations?.toList()
+@Suppress("UNNECESSARY_SAFE_CALL")
+private fun MethodNode._getParameterAnnotations(type: AstType.METHOD, annotations: Array<List<AnnotationNode>>?, types: AstTypes, visible: Boolean): List<List<AstAnnotation>> {
+	return annotations?.toList()
 		?.map {
 			it?.filterNotNull()?.filterIsInstance<AnnotationNode>()
-				?.map { AstAnnotationBuilder(it, visible = true, types = types) }
+				?.map { AstAnnotationBuilder(it, visible = visible, types = types) }
 				?.filterBlackList()
 				?: listOf()
 		}
 		?: (0 until type.argCount).map { listOf<AstAnnotation>() }
+}
+
+fun MethodNode.getParameterAnnotations(types: AstTypes): List<List<AstAnnotation>> {
+	val type = types.demangleMethod(this.desc)
+	val visible = this._getParameterAnnotations(type, this.visibleParameterAnnotations, types, visible = true)
+	val invisible = this._getParameterAnnotations(type, this.invisibleParameterAnnotations, types, visible = false)
+	return (0 until type.argCount).map { visible[it] + invisible[it] }
 }
 
 fun MethodNode.isStatic() = this.access hasFlag Opcodes.ACC_STATIC
@@ -197,20 +203,16 @@ fun MethodNode.visibility() = if (this.access hasFlag Opcodes.ACC_PUBLIC) {
 
 fun MethodNode.astRef(clazz: AstType.REF, types: AstTypes) = AstMethodRef(clazz.name, this.name, types.demangleMethod(this.desc))
 
-fun AbstractInsnNode.isEndOfBasicBlock(): Boolean {
-	return when (this.opcode) {
-		in Opcodes.IFEQ..Opcodes.IF_ACMPNE -> true
-		else -> isEnd()
-	}
+fun AbstractInsnNode.isEndOfBasicBlock(): Boolean = when (this.opcode) {
+	in Opcodes.IFEQ..Opcodes.IF_ACMPNE -> true
+	else -> isEnd()
 }
 
-fun AbstractInsnNode.isEnd(): Boolean {
-	return when (this.opcode) {
-		in Opcodes.TABLESWITCH..Opcodes.LOOKUPSWITCH -> true
-		Opcodes.GOTO -> true
-		Opcodes.ATHROW -> true
-		in Opcodes.IRETURN..Opcodes.RETURN -> true
-		else -> false
-	}
+fun AbstractInsnNode.isEnd(): Boolean = when (this.opcode) {
+	in Opcodes.TABLESWITCH..Opcodes.LOOKUPSWITCH -> true
+	Opcodes.GOTO -> true
+	Opcodes.ATHROW -> true
+	in Opcodes.IRETURN..Opcodes.RETURN -> true
+	else -> false
 }
 

@@ -89,7 +89,7 @@ fun AstAnnotation.getRefTypesFqName(): List<FqName> {
 }
 
 
-class AstAnnotationList(val list: List<AstAnnotation>) {
+class AstAnnotationList(val containerRef: AstRef, val list: List<AstAnnotation>) {
 	val byClassName by lazy { list.groupBy { it.type.fqname } }
 
 	inline fun <reified TItem : Any, reified TList : Any> getTypedList(field: KProperty1<TList, Array<TItem>>): List<TItem> {
@@ -114,4 +114,8 @@ fun AstAnnotationList.getBodiesForTarget(targetName: TargetName): List<NativeBod
 		else -> listOf()
 	}
 	return this.getTypedList(JTranscMethodBodyList::value).filter { targetName.matches(it.target) }.map { NativeBody(it.value.toList(), it.cond) } + extra
+}
+
+fun AstAnnotationList.getCallSiteBodiesForTarget(targetName: TargetName): String? {
+	return this.getTypedList(com.jtransc.annotation.JTranscCallSiteBodyList::value).filter { targetName.matches(it.target) }.map { it.value.joinToString("\n") }.firstOrNull()
 }

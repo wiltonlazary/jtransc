@@ -14,16 +14,21 @@
  * limitations under the License.
  */
 
+import big.BigTest
 import big.HelloWorldTest
+import big.NumberFormatTest2
 import com.jtransc.BuildBackend
 import com.jtransc.gen.js.JsTarget
+import javatest.MemberCollisionsTest
 import javatest.misc.BenchmarkTest
+import javatest.misc.TryFinallyCheck
 import jtransc.ExtraKeywordsTest
 import jtransc.ExtraRefsTest
 import jtransc.jtransc.js.ScriptEngineTest
 import jtransc.jtransc.nativ.JTranscJsNativeMixedTest
 import jtransc.micro.MicroHelloWorld
 import jtransc.ref.MethodBodyReferencesTest
+import jtransc.staticinit.StaticInitTest
 import org.junit.Test
 import testservice.test.ServiceLoaderTest
 
@@ -37,12 +42,14 @@ class JsTest : Base() {
 	//@Test fun testMicroHelloWorldAsm2() = testClass<HelloWorldTest>(minimize = false, target = JsTarget(), log = false, treeShaking = true, backend = BuildBackend.ASM2)
 	//@Test fun testMicroHelloWorldAsm2() = testClass<BenchmarkTest>(minimize = false, target = JsTarget(), log = false, treeShaking = true, backend = BuildBackend.ASM2)
 
+	@Test fun testMicroStaticInitTest() = testClass<StaticInitTest>(minimize = false, target = JsTarget(), log = false, treeShaking = true)
+
 	@Test fun testHelloWorld() = testClass<HelloWorldTest>(minimize = false, target = JsTarget(), log = false)
 	@Test fun testBenchmarkTest() = testClass<BenchmarkTest>(minimize = false, target = JsTarget(), log = false)
 
 	@Test fun testServiceLoaderTest() = testNativeClass<ServiceLoaderTest>("""
 		TestServiceImpl1.test:ss
-		TestServiceJs
+		TestServiceJs10
 	""", target = JsTarget(), minimize = false)
 
 	@Test fun customRun() = testNativeClass<JTranscJsNativeMixedTest>("""
@@ -75,6 +82,10 @@ class JsTest : Base() {
 		<Buffer 00 01 02 03 04 05 06 07 08 09 0a 0b 0c 0d 0e 0f>
 		{"a":10,"b":"c","c":[1,2,3]}
 		.txt
+		1
+		2
+		0
+		true
 		Timeout!
 	""", target = JsTarget(), minimize = false, treeShaking = true)
 
@@ -99,4 +110,14 @@ class JsTest : Base() {
 	@Test fun extraRefsTest() = testNativeClass<ExtraRefsTest>("""
 		OK
 	""", minimize = true, target = JsTarget())
+
+	@Test fun testPlainJs() = testClass<BigTest>(minimize = false, target = JsTarget(), log = false)
+	@Test fun testPlainJsMin() = testClass<BigTest>(minimize = true, target = JsTarget(), log = false)
+
+	@Test fun testNumberFormatTest2() = testClass<NumberFormatTest2>(minimize = false, target = JsTarget(), log = false)
+
+	@Test fun testTryFinallyCheck() = testClass<TryFinallyCheck>(minimize = false, target = JsTarget(), log = false)
+
+	@Test fun testMemberCollisionsTest() = testClass<MemberCollisionsTest>(minimize = false, target = JsTarget(), log = false)
+
 }

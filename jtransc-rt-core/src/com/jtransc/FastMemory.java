@@ -55,6 +55,12 @@ final public class FastMemory {
 		_createViews();
 	}
 
+	@HaxeMethodBody("return null;")
+	@JTranscMethodBody(target = "js", value = "return null;")
+	public ByteBuffer getByteBufferOrNull() {
+		return data;
+	}
+
 	@HaxeMethodBody("this._length = p0.length; this._data = p0.getBytes();")
 	@JTranscMethodBody(target = "js", value = "this._length = p0.length; this.buffer = p0.data.buffer;")
 	private void _initWithBytes(byte[] data) {
@@ -166,35 +172,35 @@ final public class FastMemory {
 
 	@JTranscInline
 	@HaxeMethodBody("this._data.setUInt16(p0, p1);")
-	@JTranscMethodBody(target = "js", value = "this.view.setInt16(p0, p1);")
+	@JTranscMethodBody(target = "js", value = "this.view.setInt16(p0, p1, true);")
 	final public void setInt16(int index, int value) {
 		data.putShort(index, (short) value);
 	}
 
 	@JTranscInline
 	@HaxeMethodBody("this._data.setInt32(p0, p1);")
-	@JTranscMethodBody(target = "js", value = "this.view.setInt32(p0, p1);")
+	@JTranscMethodBody(target = "js", value = "this.view.setInt32(p0, p1, true);")
 	final public void setInt32(int index, int value) {
 		data.putInt(index, value);
 	}
 
 	@JTranscInline
 	@HaxeMethodBody("this._data.setInt64(p0, p1);")
-	@JTranscMethodBody(target = "js", value = "this.view.setInt32(p0, p1.high); this.view.setInt32(p0 + 4, p1.low);")
+	@JTranscMethodBody(target = "js", value = "this.view.setInt32(p0, p1.high); this.view.setInt32(p0 + 4, p1.low, true);")
 	final public void setInt64(int index, long value) {
 		data.putLong(index, value);
 	}
 
 	@JTranscInline
 	@HaxeMethodBody("this._data.setFloat(p0, p1);")
-	@JTranscMethodBody(target = "js", value = "this.view.setFloat32(p0, p1);")
+	@JTranscMethodBody(target = "js", value = "this.view.setFloat32(p0, p1, true);")
 	final public void setFloat32(int index, float value) {
 		data.putFloat(index, value);
 	}
 
 	@JTranscInline
 	@HaxeMethodBody("this._data.setDouble(p0, p1);")
-	@JTranscMethodBody(target = "js", value = "this.view.setFloat64(p0, p1);")
+	@JTranscMethodBody(target = "js", value = "this.view.setFloat64(p0, p1, true);")
 	final public void setFloat64(int index, double value) {
 		data.putDouble(index, value);
 	}
@@ -313,6 +319,40 @@ final public class FastMemory {
 	@JTranscMethodBody(target = "js", value = "return this.view.getFloat32(p0, false);")
 	final public float getFloat32_REV(int index) {
 		return Float.intBitsToFloat(Integer.reverseBytes(data.getInt(index)));
+	}
+
+	// @TODO: provide faster implementations for supported targets
+	final public void setArrayInt8(int index, ByteBuffer data, int offset, int len) {
+		for (int n = 0; n < len; n++) setInt8(index + n, data.get(offset + n));
+	}
+
+	@JTranscMethodBody(target = "js", value = "var index = p0, data = p1.data.buffer, offset = p2, len = p3; new Int8Array(this.buffer, index, len).set(new Int8Array(data, offset, len));")
+	final public void setArrayInt8(int index, byte[] data, int offset, int len) {
+		for (int n = 0; n < len; n++) setInt8(index + n, data[offset + n]);
+	}
+
+	@JTranscMethodBody(target = "js", value = "var index = p0, data = p1.data.buffer, offset = p2, len = p3; new Int8Array(this.buffer, index, len * 2).set(new Int8Array(data, offset * 2, len * 2));")
+	final public void setArrayInt16(int index, short[] data, int offset, int len) {
+		for (int n = 0; n < len; n++) setInt16(index + n * 2, data[offset + n]);
+	}
+
+	@JTranscMethodBody(target = "js", value = "var index = p0, data = p1.data.buffer, offset = p2, len = p3; new Int8Array(this.buffer, index, len * 4).set(new Int8Array(data, offset * 4, len * 4));")
+	final public void setArrayInt32(int index, int[] data, int offset, int len) {
+		for (int n = 0; n < len; n++) setInt32(index + n * 4, data[offset + n]);
+	}
+
+	final public void setArrayInt64(int index, long[] data, int offset, int len) {
+		for (int n = 0; n < len; n++) setInt64(index + n * 8, data[offset + n]);
+	}
+
+	@JTranscMethodBody(target = "js", value = "var index = p0, data = p1.data.buffer, offset = p2, len = p3; new Int8Array(this.buffer, index, len * 4).set(new Int8Array(data, offset * 4, len * 4));")
+	final public void setArrayFloat32(int index, float[] data, int offset, int len) {
+		for (int n = 0; n < len; n++) setFloat32(index + n * 4, data[offset + n]);
+	}
+
+	@JTranscMethodBody(target = "js", value = "var index = p0, data = p1.data.buffer, offset = p2, len = p3; new Int8Array(this.buffer, index, len * 8).set(new Int8Array(data, offset * 8, len * 8));")
+	final public void setArrayFloat64(int index, float[] data, int offset, int len) {
+		for (int n = 0; n < len; n++) setFloat32(index + n * 4, data[offset + n]);
 	}
 
 	@HaxeMethodBody("p2.getBytes().blit(p3, p0.getBytes(), p1, p4);")
