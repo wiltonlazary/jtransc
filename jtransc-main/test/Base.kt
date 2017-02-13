@@ -33,16 +33,18 @@ import org.junit.Assert
 import java.io.File
 
 open class Base {
+	open val DEFAULT_TARGET: GenTargetDescriptor = JsTarget()
+
 	open val BACKEND = BuildBackend.ASM
 	open val TREESHAKING = true
 	open val TREESHAKING_TRACE = false
+
 	companion object {
 		const val MINIMIZE = true
 		//const val TREESHAKING = false
 		const val RELOOPER = true
 		const val ANALYZER = false
-		const val DEBUG = true
-		val DEFAULT_TARGET = JsTarget()
+		const val DEBUG = false
 		//val DEFAULT_TARGET = HaxeTarget
 	}
 
@@ -105,7 +107,7 @@ open class Base {
 
 	fun normalize(str: String) = str.replace("\r\n", "\n").replace('\r', '\n').trim()
 
-	inline fun <reified T : Any> runClass(minimize: Boolean? = null, analyze: Boolean? = null, lang: String = "js", debug: Boolean? = null, backend: BuildBackend? = null,target: GenTargetDescriptor? = null, treeShaking: Boolean? = null): String {
+	inline fun <reified T : Any> runClass(minimize: Boolean? = null, analyze: Boolean? = null, lang: String = "js", debug: Boolean? = null, backend: BuildBackend? = null, target: GenTargetDescriptor? = null, treeShaking: Boolean? = null): String {
 		return runClass(T::class.java, minimize = minimize, analyze = analyze, lang = lang, debug = debug, target = target, treeShaking = treeShaking, backend = backend)
 	}
 

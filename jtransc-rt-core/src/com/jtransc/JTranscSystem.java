@@ -1,6 +1,5 @@
 package com.jtransc;
 
-import com.jtransc.annotation.JTranscInline;
 import com.jtransc.annotation.JTranscMethodBody;
 import com.jtransc.annotation.JTranscMethodBodyList;
 import com.jtransc.annotation.haxe.HaxeMethodBody;
@@ -66,6 +65,7 @@ public class JTranscSystem {
 		@HaxeMethodBody(""),
 		@HaxeMethodBody(target = "cpp", value = "cpp.vm.Gc.compact();"),
 		@HaxeMethodBody(target = "d", value = ""),
+		@HaxeMethodBody(target = "cs", value = "System.GC.Collect()"),
 	})
 	static public void gc() {
 		System.gc();
@@ -76,6 +76,7 @@ public class JTranscSystem {
 		@JTranscMethodBody(target = "js", value = "return true;"),
 		@JTranscMethodBody(target = "cpp", value = "return true;"),
 		@JTranscMethodBody(target = "d", value = "return true;"),
+		@JTranscMethodBody(target = "cs", value = "return true;"),
 	})
 	@SuppressWarnings("all")
 	static public boolean usingJTransc() {
@@ -88,14 +89,20 @@ public class JTranscSystem {
 	}
 
 	@HaxeMethodBody("N.debugger();")
-	@JTranscMethodBody(target = "js", value = "debugger;")
+	@JTranscMethodBodyList({
+		@JTranscMethodBody(target = "js", value = "debugger;"),
+		@JTranscMethodBody(target = "cs", value = "System.Diagnostics.Debugger.Break();"),
+	})
 	static public void debugger() {
 		//System.out.println("debugger");
 		//throw new Error("Debugger");
 	}
 
 	@HaxeMethodBody("if (!p0) N.debugger();")
-	@JTranscMethodBody(target = "js", value = "if (!p0) debugger;")
+	@JTranscMethodBodyList({
+		@JTranscMethodBody(target = "js", value = "if (!p0) debugger;"),
+		@JTranscMethodBody(target = "cs", value = "if (!pc) System.Diagnostics.Debugger.Break();"),
+	})
 	static public void assert2(boolean trueCond) {
 		if (!trueCond) {
 			System.out.println("debugger");
@@ -108,6 +115,7 @@ public class JTranscSystem {
 		@JTranscMethodBody(target = "js", value = "return N.str(\"js\");"),
 		@JTranscMethodBody(target = "cpp", value = "return N::str(\"cpp\");"),
 		@JTranscMethodBody(target = "d", value = "return N.str(\"d\");"),
+		@JTranscMethodBody(target = "cs", value = "return N.str(\"csharp\");"),
 	})
 	static public String getRuntimeKind() {
 		if (!usingJTransc()) return "java";
@@ -137,6 +145,7 @@ public class JTranscSystem {
 	@JTranscMethodBodyList({
 		@JTranscMethodBody(target = "js", value = "return false;"),
 		@JTranscMethodBody(target = "cpp", value = "return true;"),
+		@JTranscMethodBody(target = "cs", value = "return true;"),
 	})
 	public static boolean isSys() {
 		return TRUE;
@@ -156,6 +165,7 @@ public class JTranscSystem {
 		@HaxeMethodBody(target = "cs", value = "return true;"),
 		@HaxeMethodBody("return false;"),
 	})
+	@JTranscMethodBody(target = "cs", value = "return true;")
 	public static boolean isCsharp() {
 		return FALSE;
 	}
@@ -222,6 +232,7 @@ public class JTranscSystem {
 		@JTranscMethodBody(target = "js", value = "return N.str(typeof navigator != 'undefined' ? navigator.platform : process.platform);"),
 		@JTranscMethodBody(target = "cpp", value = "return N::str(L\"unknown\");"),
 		@JTranscMethodBody(target = "d", value = "return N.str(N.getOS());"),
+		@JTranscMethodBody(target = "cs", value = "return N.str(System.Environment.OSVersion.Platform.ToString());"),
 	})
 	static private String getOSRaw() {
 		return System.getProperty("os.name");
@@ -337,4 +348,9 @@ public class JTranscSystem {
 		return JTranscSystemProperties.userHome();
 	}
 
+	static public void checkInJVM(String reason) {
+		if (JTranscSystem.isJTransc()) {
+			throw new RuntimeException("Not expected JTransc: " + reason);
+		}
+	}
 }

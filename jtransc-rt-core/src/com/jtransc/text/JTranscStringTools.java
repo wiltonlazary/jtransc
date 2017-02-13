@@ -40,6 +40,10 @@ public class JTranscStringTools {
 	public static String toString(double v) {
 		if (Double.isNaN(v)) return "NaN";
 		if (Double.isInfinite(v)) return (v < 0) ? "-Infinity" : "Infinity";
+		if (v == 0.0) {
+			long l = Double.doubleToRawLongBits(v);
+			if ((l >>> 63) != 0) return "-0.0";
+		}
 		//return JTranscStringTools.toString(d);
 		String out = _toString(v);
 		boolean hasSymbols = false;
@@ -69,6 +73,7 @@ public class JTranscStringTools {
 		//@JTranscMethodBody(target = "js", value = "return N.str(Number(p0).toPrecision(2));")
 		//@JTranscMethodBody(target = "d", value = "return N.str(to!string(p0));")
 		@JTranscMethodBody(target = "d", value = "return N.str(format(\"%.16g\", p0));"),
+		@JTranscMethodBody(target = "cs", value = "return N.str(Convert.ToString(p0, System.Globalization.CultureInfo.InvariantCulture));"),
 	})
 	native static public String _toString(double v);
 }

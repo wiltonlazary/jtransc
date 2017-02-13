@@ -20,6 +20,7 @@ public class JTranscClock {
 		@JTranscMethodBodyList({
 			@JTranscMethodBody(target = "js", value = "return N.getTime();"),
 			@JTranscMethodBody(target = "cpp", value = "return N::getTime();"),
+			@JTranscMethodBody(target = "cs", value = "return N.getTime();"),
 		})
 		public double fastTime() {
 			if (parent != null) {
@@ -46,6 +47,9 @@ public class JTranscClock {
 		}
 
 		@HaxeMethodBody(target = "sys", value = "Sys.sleep(p0 / 1000.0);")
+		@JTranscMethodBody(target = "cs", value = {
+			"System.Threading.Thread.Sleep((int)p0);"
+		})
 		public void sleep(double ms) {
 			if (parent != null) {
 				parent.sleep(ms);

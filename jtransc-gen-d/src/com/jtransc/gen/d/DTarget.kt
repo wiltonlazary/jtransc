@@ -146,7 +146,7 @@ class DGenerator(injector: Injector) : SingleFileCommonGenerator(injector) {
 
 	fun String?.dquote(): String = if (this != null) "\"${this.escape()}\"w" else "null"
 
-	override fun genClassBodyMethods(clazz: AstClass): Indenter = Indenter.gen {
+	override fun genClassBodyMethods(clazz: AstClass, kind: MemberTypes): Indenter = Indenter.gen {
 		val directMethods = clazz.methods
 		val interfaceMethods = clazz.allDirectInterfaces.flatMap { it.methods }
 		val actualMethods = (if (clazz.isInterface) directMethods else directMethods + interfaceMethods).filter { !it.isStatic }
@@ -162,7 +162,7 @@ class DGenerator(injector: Injector) : SingleFileCommonGenerator(injector) {
 		}
 	}
 
-	override fun genClassDecl(clazz: AstClass): String {
+	override fun genClassDecl(clazz: AstClass, kind: MemberTypes): String {
 		val CLASS = if (clazz.isInterface) "interface" else "class"
 		val iabstract = if (clazz.isAbstract) "abstract " else ""
 		val base = "$iabstract$CLASS ${clazz.name.targetSimpleName}"
@@ -284,7 +284,7 @@ class DGenerator(injector: Injector) : SingleFileCommonGenerator(injector) {
 	override val String.escapeString: String get() = "STRINGLIT_${allocString(currentClass, this)}"
 
 	override fun AstExpr.genNotNull(): String {
-		if (debugRelease) {
+		if (debugVersion) {
 			return "ensureNotNull(" + genExpr2(this) + ")"
 		} else {
 			return genExpr2(this)
