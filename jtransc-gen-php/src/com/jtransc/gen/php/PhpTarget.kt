@@ -50,7 +50,9 @@ class PhpTarget : GenTargetDescriptor() {
 }
 
 @Singleton
-class PhpGenerator(injector: Injector) : SingleFileCommonGenerator(injector) {
+class PhpGenerator(injector: Injector) : CommonGenerator(injector) {
+	override val SINGLE_FILE: Boolean = true
+
 	//class DGenerator(injector: Injector) : FilePerClassCommonGenerator(injector) {
 	override val staticAccessOperator: String = "::"
 	override val instanceAccessOperator: String = "->"
@@ -59,6 +61,7 @@ class PhpGenerator(injector: Injector) : SingleFileCommonGenerator(injector) {
 	override val methodFeaturesWithTraps = setOf(SwitchFeature::class.java)
 	override val stringPoolType: StringPool.Type = StringPool.Type.GLOBAL
 	override val interfacesSupportStaticMembers: Boolean = false
+	override val localVarPrefix = "\""
 
 	override val keywords = setOf(
 		"abstract", "alias", "align", "asm", "assert", "auto",
@@ -115,8 +118,8 @@ class PhpGenerator(injector: Injector) : SingleFileCommonGenerator(injector) {
 
 	override fun quoteString(str: String) = str.dquote()
 
-	override fun genClasses(output: SyncVfsFile): Indenter = Indenter.gen {
-		val classesStr = super.genClasses(output)
+	override fun genSingleFileClasses(output: SyncVfsFile): Indenter = Indenter.gen {
+		val classesStr = super.genSingleFileClasses(output)
 		line(classesStr)
 		line("class Bootstrap") {
 			for (lit in getGlobalStrings()) {
@@ -194,7 +197,6 @@ class PhpGenerator(injector: Injector) : SingleFileCommonGenerator(injector) {
 	override val AstLocal.decl: String get() = "\$${this.targetName} = ${this.type.nativeDefaultString};"
 
 	override fun genExprParam(e: AstExpr.PARAM) = "\$" + e.argument.targetName
-	override fun genExprLocal(e: AstExpr.LOCAL) = "\$" + e.local.targetName
 
 	override fun actualSetLocal(stm: AstStm.SET_LOCAL, localName: String, exprStr: String) = "\$$localName = $exprStr;"
 
@@ -365,10 +367,10 @@ class PhpGenerator(injector: Injector) : SingleFileCommonGenerator(injector) {
 		return "$ObjectArrayType${staticAccessOperator}createMultiSure(\"$desc\", ${e.counts.map { it.genExpr() }.joinToString(", ")})"
 	}
 
-	override val NegativeInfinityString = "Double.NegativeInfinity"
-	override val PositiveInfinityString = "Double.PositiveInfinity"
+	override val DoubleNegativeInfinityString = "Double.NegativeInfinity"
+	override val DoublePositiveInfinityString = "Double.PositiveInfinity"
 	//override val NanString = "Double.NaN"
-	override val NanString = "N.DoubleNaN"
+	override val DoubleNanString = "N.DoubleNaN"
 
 	override val String.escapeString: String get() = "Bootstrap::\$STRINGLIT_${allocString(currentClass, this)}"
 

@@ -6,6 +6,7 @@ using System;
 
 class N {
 	//public static readonly double DoubleNaN = 0.0d / 0.0;
+	public static readonly float FloatNaN = intBitsToFloat(0x7FF80000);
 	public static readonly double DoubleNaN = longBitsToDouble(0x7FF8000000000000);
 
 	static public {% CLASS com.jtransc.JTranscWrapped %} wrap(object item) {
@@ -16,6 +17,10 @@ class N {
 	static public object unwrap({% CLASS java.lang.Object %} item) {
 		if (item == null) return null;
 		return {% CLASS com.jtransc.JTranscWrapped %}.unwrap(({% CLASS com.jtransc.JTranscWrapped %})item);
+	}
+
+	static public int iushr(int l, int r) {
+		return (int)(((uint)l) >> r);
 	}
 
 	//static public int MIN_INT32 = Int32.MinValue;
@@ -205,6 +210,10 @@ class JA_Template<T> : JA_0 {
 		return len;
 	}
 
+	public void setArraySlice(int index, T[] data) {
+		Array.Copy(data, 0, this.data, index, data.Length);
+	}
+
 	public T this[int i] { get { return data[i]; } set { data[i] = value; } }
 }
 
@@ -255,10 +264,14 @@ class JA_L : JA_Template<{% CLASS java.lang.Object %}> {
 class JA_Z : JA_B  { public JA_Z(sbyte[] data, string desc = "[Z") : base(data, desc) { } public JA_Z(int size, string desc = "[Z") : base(size, desc) { } }
 
 class WrappedThrowable : Exception {
-	public {% CLASS java.lang.Object %} t;
+	public {% CLASS java.lang.Throwable %} t;
+
+	public WrappedThrowable({% CLASS java.lang.Throwable %} t) : base() {
+		this.t = ({% CLASS java.lang.Throwable %})t;
+	}
 
 	public WrappedThrowable({% CLASS java.lang.Object %} t) : base() {
-		this.t = t;
+		this.t = ({% CLASS java.lang.Throwable %})t;
 	}
 }
 

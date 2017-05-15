@@ -13,10 +13,7 @@ import jtransc.jtransc.FastMemoryTest;
 import jtransc.rt.test.JTranscReflectionTest;
 
 import java.lang.annotation.*;
-import java.lang.reflect.Field;
-import java.lang.reflect.Method;
-import java.lang.reflect.ParameterizedType;
-import java.lang.reflect.Type;
+import java.lang.reflect.*;
 import java.nio.ByteBuffer;
 import java.nio.charset.Charset;
 import java.security.MessageDigest;
@@ -280,7 +277,7 @@ public class MiscTest {
 		testMod(ints);
 
 		//JTranscSystem.debugger();
-		long[] longs = {0, 1, Long.MAX_VALUE, -1, Long.MIN_VALUE, 0x12345678};
+		long[] longs = {0, 1, Long.MAX_VALUE, -1, Long.MIN_VALUE, 0x12345678, 0x123456789ABCDEF1L, -0x123456789ABCDEF1L};
 
 		testPrintLong(longs);
 		testNegLong(longs);
@@ -490,7 +487,7 @@ public class MiscTest {
 		System.out.println("testSeedUniquifier:");
 		seedUniquifier = 8682522807148012L;
 		System.out.println(seedUniquifier);
-		System.out.println(seedUniquifier());
+		JTranscConsole.log(seedUniquifier());
 	}
 
 	static private void testIdentityHashCode() {
@@ -510,7 +507,7 @@ public class MiscTest {
 		JTranscConsole.log(o.z);
 		JTranscConsole.log(o.b);
 		JTranscConsole.log(o.s);
-		JTranscConsole.log(o.c);
+		JTranscConsole.log((int)o.c);
 		JTranscConsole.log(o.i);
 		JTranscConsole.log(o.i2);
 		JTranscConsole.log(o.i3);
@@ -525,7 +522,7 @@ public class MiscTest {
 		JTranscConsole.log(DefaultValuesClassStatic.z);
 		JTranscConsole.log(DefaultValuesClassStatic.b);
 		JTranscConsole.log(DefaultValuesClassStatic.s);
-		JTranscConsole.log(DefaultValuesClassStatic.c);
+		JTranscConsole.log((int)DefaultValuesClassStatic.c);
 		JTranscConsole.log(DefaultValuesClassStatic.i);
 		System.out.println(DefaultValuesClassStatic.j);
 		System.out.println(DefaultValuesClassStatic.f);
@@ -969,7 +966,7 @@ public class MiscTest {
 		System.out.println(v1[0]);
 		System.out.println(v2[0]);
 		System.out.println(v3[0]);
-		System.out.println(v4[0]);
+		//System.out.println(v4[0]);
 		System.out.println(v5[0]);
 		System.out.println(v6[0]);
 		System.out.println(v7[0]);
@@ -1053,6 +1050,23 @@ public class MiscTest {
 			}
 		}
 
+		for (Field f : GenericTest2.class.getDeclaredFields()) {
+			// sun.reflect.generics.reflectiveObjects.ParameterizedTypeImpl
+			// java.lang.reflect.ParameterizedType
+			System.out.println("Field.null: " + (f == null));
+			System.out.println("Field.name: " + f.getName());
+			System.out.println("Field.type: " + f.getType());
+			System.out.println("Field.declaringClass: " + f.getDeclaringClass());
+			System.out.println("Field.string: " + f.toString());
+			Type genericType = f.getGenericType();
+			if (genericType instanceof ParameterizedType) {
+				ParameterizedType pt = (ParameterizedType) genericType;
+				System.out.println("  type args:" + Arrays.toString(pt.getActualTypeArguments()));
+				System.out.println("  owner type:" + pt.getOwnerType());
+				System.out.println("  raw type:" + pt.getRawType());
+			}
+		}
+
 		for (Method m : GenericTest.class.getDeclaredMethods()) {
 			// sun.reflect.generics.reflectiveObjects.ParameterizedTypeImpl
 			// java.lang.reflect.ParameterizedType
@@ -1060,6 +1074,30 @@ public class MiscTest {
 			System.out.println("  ret: " + m.getReturnType());
 			System.out.println("  args count: " + m.getParameterCount());
 			System.out.println("  args: " + Arrays.toString(m.getParameterTypes()));
+			Parameter[] parameters = m.getParameters();
+			System.out.println("  args count2: " + parameters.length);
+			for (Parameter param : parameters) {
+				System.out.println("  args2: " + param.getType());
+			}
+			Type[] genericTypes = m.getGenericParameterTypes();
+			System.out.println("  ret generic: " + m.getGenericReturnType());
+			for (Type genericType : genericTypes) {
+				System.out.println("  param generic: " + genericType);
+			}
+		}
+
+		for (Method m : GenericTest2.class.getDeclaredMethods()) {
+			// sun.reflect.generics.reflectiveObjects.ParameterizedTypeImpl
+			// java.lang.reflect.ParameterizedType
+			System.out.println("Method: " + m.toString());
+			System.out.println("  ret: " + m.getReturnType());
+			System.out.println("  args count: " + m.getParameterCount());
+			System.out.println("  args: " + Arrays.toString(m.getParameterTypes()));
+			Parameter[] parameters = m.getParameters();
+			System.out.println("  args count2: " + parameters.length);
+			for (Parameter param : parameters) {
+				System.out.println("  args2: " + param.getType());
+			}
 			Type[] genericTypes = m.getGenericParameterTypes();
 			System.out.println("  ret generic: " + m.getGenericReturnType());
 			for (Type genericType : genericTypes) {
@@ -1129,6 +1167,11 @@ public class MiscTest {
 		list.add("B");
 		list.add("C");
 		sb.append(list.size());
+		list.ensureCapacity(5);
+		sb.append(list.size());
+		list.trimToSize();
+		sb.append(list.size());
+
 		Collections.reverse(list);
 		for (String item : list) sb.append(item);
 
@@ -1483,6 +1526,20 @@ class GenericTest {
 	public List<Integer> method1(List<String> a, boolean b, Map<String, List<Integer>> c, int d) {
 		throw new Error("Not supported calling!");
 	}
+}
+
+class GenericTest2 {
+	@MyKeep
+	public Map<String, Map<Integer, Double>> map;
+
+	@MyKeep
+	public List<Integer> method1(List<String> a, boolean b, Map<String, List<Integer>> c, int d) {
+		throw new Error("Not supported calling!");
+	}
+}
+
+@JTranscKeep
+@interface MyKeep {
 }
 
 @SuppressWarnings("all")

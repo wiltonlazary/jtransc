@@ -33,15 +33,7 @@ object CommonTagHandler {
 		override val ref = clazz.ref
 	}
 
-	fun getRefFqName(desc: String, params: HashMap<String, Any?>): FqName {
-		val dataParts = desc.split(':').map { getOrReplaceVar(it, params) }
-		val desc2 = dataParts.joinToString(":")
-		return dataParts[0].replace('@', '$').fqname
-	}
-
-	private fun resolveClassName(str: String, params: HashMap<String, Any?>): FqName {
-		return str.replace('@', '$').fqname
-	}
+	private fun resolveClassName(str: String, params: HashMap<String, Any?>): FqName = str.replace('@', '$').fqname
 
 	fun getRef(program: AstProgram, type: String, desc: String, params: HashMap<String, Any?>): Result {
 		val dataParts = desc.split(':').map { getOrReplaceVar(it, params) }
@@ -60,7 +52,7 @@ object CommonTagHandler {
 				"CONSTRUCTOR" -> {
 					if (dataParts.size >= 2) {
 						val ref = AstMethodRef(clazz.name, "<init>", types.demangleMethod(dataParts[1]))
-						CONSTRUCTOR(ref, program[ref]!!)
+						CONSTRUCTOR(ref, program[ref] ?: invalidOp("Can't find ref $ref"))
 					} else {
 						val methods = clazz.constructors
 						if (methods.isEmpty()) invalidOp("evalReference: Can't find constructor $desc2")
@@ -73,7 +65,7 @@ object CommonTagHandler {
 					val isStatic = (tag == "SMETHOD")
 					if (dataParts.size >= 3) {
 						val ref = AstMethodRef(clazz.name, dataParts[1], types.demangleMethod(dataParts[2]))
-						METHOD(ref, program[ref]!!, isStatic)
+						METHOD(ref, program[ref] ?: invalidOp("Can't find ref $ref"), isStatic)
 					} else {
 						val methods = clazz.getMethodsInAncestorsAndInterfaces(dataParts[1])
 						if (methods.isEmpty()) invalidOp("evalReference: Can't find method $desc2")

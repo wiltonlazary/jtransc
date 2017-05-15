@@ -9,6 +9,7 @@ import com.jtransc.annotation.haxe.*
 import com.jtransc.ast.*
 import com.jtransc.ast.feature.method.GotosFeature
 import com.jtransc.ast.feature.method.SwitchFeature
+import com.jtransc.ast.transform.reduceSwitch
 import com.jtransc.ds.concatNotNull
 import com.jtransc.ds.getOrPut2
 import com.jtransc.ds.split
@@ -29,7 +30,7 @@ import com.jtransc.vfs.*
 import java.io.File
 import java.util.*
 
-class HaxeTarget() : GenTargetDescriptor() {
+class HaxeTarget : GenTargetDescriptor() {
 	override val priority = 1000
 	override val name = "haxe"
 	override val longName = "Haxe"
@@ -89,9 +90,12 @@ class HaxeTarget() : GenTargetDescriptor() {
 }
 
 @Singleton
-class HaxeGenerator(injector: Injector) : FilePerClassCommonGenerator(injector) {
+class HaxeGenerator(injector: Injector) : CommonGenerator(injector) {
+	override val SINGLE_FILE: Boolean = false
 	val haxeConfigMergedAssetsFolder: HaxeConfigMergedAssetsFolder? = injector.getOrNull()
 	val configHaxeAddSubtarget: ConfigHaxeAddSubtarget? = injector.getOrNull()
+	val MAX_SWITCH_SIZE = 10
+	override val floatHasFPrefix: Boolean = false
 
 	//val unreflective = "@:unreflective"
 	val unreflective = ""
@@ -161,6 +165,12 @@ class HaxeGenerator(injector: Injector) : FilePerClassCommonGenerator(injector) 
 			}
 		}
 	}
+
+	//override fun genStmSwitch(stm: AstStm.SWITCH): Indenter = if (stm.cases.size > MAX_SWITCH_SIZE) {
+	//	this.genStm2(stm.reduceSwitch(maxChunkSize = 10))
+	//} else {
+	//	super.genStmSwitch(stm)
+	//}
 
 	//val BUILD_COMMAND = listOf("haxelib", "run", "lime", "@@SWITCHES", "build", "@@SUBTARGET")
 
@@ -516,7 +526,8 @@ class HaxeGenerator(injector: Injector) : FilePerClassCommonGenerator(injector) 
 						try {
 							// @TODO: Do not hardcode this!
 							if (method.name == "throwParameterIsNullException") line("N.debugger();")
-							line(method.getHaxeNativeBody { rbody?.genBodyWithFeatures(method) ?: Indenter("throw 'No method body';") }.toString().template())
+							val str : String = "${clazz.name}.${method.name} :: ${method.desc}: No method body".replace('$', '_');
+							line(method.getHaxeNativeBody { rbody?.genBodyWithFeatures(method) ?: Indenter("throw '${str}';") }.toString().template())
 							if (method.methodVoidReturnThis) line("return this;")
 						} catch (e: Throwable) {
 							//e.printStackTrace()
@@ -689,9 +700,9 @@ class HaxeGenerator(injector: Injector) : FilePerClassCommonGenerator(injector) 
 	override val DoubleArrayType = "JA_D"
 	override val ObjectArrayType = "JA_L"
 
-	override val NegativeInfinityString = "Math.NEGATIVE_INFINITY"
-	override val PositiveInfinityString = "Math.POSITIVE_INFINITY"
-	override val NanString = "Math.NaN"
+	override val DoubleNegativeInfinityString = "Math.NEGATIVE_INFINITY"
+	override val DoublePositiveInfinityString = "Math.POSITIVE_INFINITY"
+	override val DoubleNanString = "Math.NaN"
 
 	///////////////////////////
 

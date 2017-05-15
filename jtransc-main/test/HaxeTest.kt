@@ -16,15 +16,24 @@
 
 import big.HelloWorldTest
 import com.jtransc.gen.haxe.HaxeTarget
+import issues.Issue103
 import issues.Issue94Enum
+import jtransc.bug.JTranscBug110
 import jtransc.jtransc.nativ.JTranscHaxeNativeMixedTest
+import jtransc.micro.MicroHelloWorld
+import org.junit.Ignore
 import org.junit.Test
 
 class HaxeTest : Base() {
+	@Test fun testMicroHelloWorld() = testClass<MicroHelloWorld>(minimize = false, target = HaxeTarget(), lang = "js", log = null, treeShaking = true)
+
 	@Test fun testHelloWorldHaxeJsTreeShaking() = testClass<HelloWorldTest>(minimize = false, target = HaxeTarget(), lang = "js", log = null, treeShaking = true)
 	@Test fun testHelloWorldHaxeJs() = testClass<HelloWorldTest>(minimize = false, target = HaxeTarget(), lang = "js", log = null, treeShaking = false)
 
 	@Test fun testEnumBugIssue94() = testClass<Issue94Enum>(minimize = false, target = HaxeTarget(), log = false, treeShaking = true)
+	@Test fun testBigSwitchIssue103() = testClass<Issue103>(minimize = false, target = HaxeTarget(), lang = "js", log = false, treeShaking = true)
+
+	@Test fun testJTranscBug110() = testClass<JTranscBug110>(minimize = false, target = HaxeTarget(), lang = "js", log = false, treeShaking = true)
 
 	@Test fun haxeNativeCallTest() = testNativeClass<JTranscHaxeNativeMixedTest>("""
 		true
@@ -57,7 +66,7 @@ class HaxeTest : Base() {
 		10
 		jtransc.jtransc.JTranscInternalNamesTest_
 		main__Ljava_lang_String__V
-		___hello
+		_jt___hello
 		JTranscReinterpretArrays:
 		bytes:8 : [0, 0, 0, 0, 0, 0, 0, 0]
 		floats:2 : [0.0, 0.0]

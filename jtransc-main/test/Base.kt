@@ -36,6 +36,7 @@ open class Base {
 	open val DEFAULT_TARGET: GenTargetDescriptor = JsTarget()
 
 	open val BACKEND = BuildBackend.ASM
+	//open val BACKEND = BuildBackend.ASM2
 	open val TREESHAKING = true
 	open val TREESHAKING_TRACE = false
 
@@ -108,12 +109,15 @@ open class Base {
 
 	fun normalize(str: String) = str.replace("\r\n", "\n").replace('\r', '\n').trim()
 
-	inline fun <reified T : Any> runClass(minimize: Boolean? = null, analyze: Boolean? = null, lang: String = "js", debug: Boolean? = null, backend: BuildBackend? = null, target: GenTargetDescriptor? = null, treeShaking: Boolean? = null): String {
-		return runClass(T::class.java, minimize = minimize, analyze = analyze, lang = lang, debug = debug, target = target, treeShaking = treeShaking, backend = backend)
+	inline fun <reified T : Any> runClass(minimize: Boolean? = null, analyze: Boolean? = null, lang: String = "js", noinline configureInjector: Injector.() -> Unit = {},debug: Boolean? = null, backend: BuildBackend? = null, target: GenTargetDescriptor? = null, treeShaking: Boolean? = null): String {
+		return runClass(T::class.java, minimize = minimize, analyze = analyze, lang = lang, debug = debug, target = target, configureInjector = configureInjector, treeShaking = treeShaking, backend = backend)
 	}
 
-	inline fun <reified T : Any> testNativeClass(expected: String, minimize: Boolean? = null, debug: Boolean? = null, target: GenTargetDescriptor? = null, backend: BuildBackend? = null, treeShaking: Boolean? = null) {
-		Assert.assertEquals(normalize(expected.trimIndent()), normalize(runClass<T>(minimize = minimize, debug = debug, target = target, treeShaking = treeShaking, backend = backend).trim()))
+	inline fun <reified T : Any> testNativeClass(
+		expected: String, minimize: Boolean? = null, debug: Boolean? = null, noinline configureInjector: Injector.() -> Unit = {}, target: GenTargetDescriptor? = null, backend: BuildBackend? = null, treeShaking: Boolean? = null,
+		noinline transformerOut: (String) -> String = { it }
+	) {
+		Assert.assertEquals(normalize(expected.trimIndent()), normalize(transformerOut(runClass<T>(minimize = minimize, debug = debug, configureInjector = configureInjector, target = target, treeShaking = treeShaking, backend = backend).trim())))
 	}
 
 	fun locateProjectRoot(): SyncVfsFile {
@@ -133,6 +137,7 @@ open class Base {
 		analyze: Boolean?, debug: Boolean? = null,
 		treeShaking: Boolean? = null,
 		backend: BuildBackend? = null,
+		configureInjector: (Injector) -> Unit = {},
 		//target: GenTargetDescriptor = HaxeTarget
 		target: GenTargetDescriptor? = null
 	): String {
@@ -152,6 +157,8 @@ open class Base {
 		injector.mapImpl<AstTypes, AstTypes>()
 		injector.mapInstance(ConfigMinimizeNames(minimize ?: MINIMIZE))
 		injector.mapInstance(ConfigTreeShaking(treeShaking ?: TREESHAKING, TREESHAKING_TRACE))
+
+		configureInjector(injector)
 
 		return log.setTempLogger({ v, l -> }) {
 			JTranscBuild(
@@ -177,6 +184,9 @@ open class Base {
 						projectRoot["jtransc-rt-core-kotlin/target/classes"].realpathOS,
 						projectRoot["jtransc-rt-core-kotlin/build/classes/main"].realpathOS,
 						projectRoot["jtransc-rt-core-kotlin/build/resources/main"].realpathOS,
+						projectRoot["jtransc-rt-extended-charsets/target/classes"].realpathOS,
+						projectRoot["jtransc-rt-extended-charsets/build/classes/main"].realpathOS,
+						projectRoot["jtransc-rt-extended-charsets/build/resources/main"].realpathOS,
 						projectRoot["jtransc-annotations/target/classes"].realpathOS,
 						projectRoot["jtransc-annotations/build/classes/main"].realpathOS,
 						projectRoot["jtransc-annotations/build/resources/main"].realpathOS

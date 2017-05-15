@@ -22,6 +22,8 @@ import com.jtransc.annotation.JTranscMethodBody;
 import com.jtransc.annotation.haxe.HaxeMethodBody;
 import com.jtransc.annotation.haxe.HaxeMethodBodyList;
 
+import java.nio.ByteBuffer;
+
 @JTranscInvisible
 @SuppressWarnings({"PointlessBitwiseExpression", "PointlessArithmeticExpression", "WeakerAccess", "unused"})
 public class JTranscBits {
@@ -367,6 +369,10 @@ public class JTranscBits {
 		return readInt64BE(data, 0);
 	}
 
+	static public short readInt16(byte[] data, int offset, boolean LE) {
+		return LE ? readInt16LE(data, offset) : readInt16BE(data, offset);
+	}
+
 	static public short readInt16LE(byte[] data, int offset) {
 		return (short) (
 			((data[offset + 1] & 0xFF) << 8) |
@@ -427,5 +433,18 @@ public class JTranscBits {
 	})
 	static public int sxi16(int value) {
 		return (value << 16) >> 16;
+	}
+
+
+	static public short readInt16(ByteBuffer in, boolean LE) {
+		int _0 = in.get() & 0xFF;
+		int _1 = in.get() & 0xFF;
+
+		return (short) (
+			LE  ?
+				(_1 << 8) | (_0 << 0)
+				:
+				(_0 << 8) | (_1 << 0)
+		);
 	}
 }

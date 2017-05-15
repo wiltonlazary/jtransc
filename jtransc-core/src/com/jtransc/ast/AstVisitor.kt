@@ -75,6 +75,7 @@ open class AstVisitor {
 			is AstExpr.LITERAL_REFNAME -> visit(expr)
 			is AstExpr.INVOKE_DYNAMIC_METHOD -> visit(expr)
 			is AstExpr.LOCAL -> visit(expr)
+			is AstExpr.TYPED_LOCAL -> visit(expr)
 			is AstExpr.PARAM -> visit(expr)
 			is AstExpr.CAUGHT_EXCEPTION -> visit(expr)
 			is AstExpr.BINOP -> visit(expr)
@@ -291,6 +292,11 @@ open class AstVisitor {
 		visit(expr.local)
 	}
 
+	open fun visit(expr: AstExpr.TYPED_LOCAL) {
+		visit(expr.local)
+		visit(expr.type)
+	}
+
 	open fun visit(expr: AstExpr.PARAM) {
 		visit(expr.argument)
 	}
@@ -348,7 +354,7 @@ open class AstVisitor {
 	}
 
 	open fun visit(expr: AstExpr.CAST) {
-		visit(expr.expr)
+		visit(expr.subject)
 		visit(expr.type)
 	}
 

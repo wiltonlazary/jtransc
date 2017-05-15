@@ -71,6 +71,12 @@ fun dump(types: AstTypes, stm: AstStm?): Indenter {
 					line("default: ${dump(types, stm.default)}")
 				}
 			}
+			is AstStm.SWITCH_GOTO -> {
+				line("switch (${dump(types, stm.subject)})") {
+					for ((index, case) in stm.cases) line("case $index: goto $case;")
+					line("default: goto ${stm.default};")
+				}
+			}
 			is AstStm.MONITOR_ENTER -> line("MONITOR_ENTER(${dump(types, stm.expr)})")
 			is AstStm.MONITOR_EXIT -> line("MONITOR_EXIT(${dump(types, stm.expr)})")
 			else -> noImpl("$stm")
@@ -83,6 +89,10 @@ fun dump(types: AstTypes, expr: AstExpr.Box?): String {
 }
 
 fun AstExpr?.exprDump(types: AstTypes) = dump(types, this)
+
+fun List<AstStm>.dump(types: AstTypes) = dump(types, this.stm())
+fun AstStm.dump(types: AstTypes) = dump(types, this)
+fun AstExpr.dump(types: AstTypes) = dump(types, this)
 
 fun dump(types: AstTypes, expr: AstExpr?): String {
 	return when (expr) {
@@ -104,9 +114,10 @@ fun dump(types: AstTypes, expr: AstExpr?): String {
 		is AstExpr.ARRAY_ACCESS -> dump(types, expr.array) + "[" + dump(types, expr.index) + "]"
 		is AstExpr.FIELD_INSTANCE_ACCESS -> dump(types, expr.expr) + "." + expr.field.name
 		is AstExpr.FIELD_STATIC_ACCESS -> "" + expr.clazzName + "." + expr.field.name
-		is AstExpr.CAST -> "((" + javaDump(types, expr.to) + ")" + dump(types, expr.expr) + ")"
+		is AstExpr.CAST -> "((" + javaDump(types, expr.to) + ")" + dump(types, expr.subject) + ")"
 		is AstExpr.INSTANCE_OF -> "(" + dump(types, expr.expr) + " instance of " + javaDump(types, expr.checkType) + ")"
 		is AstExpr.NEW -> "new " + expr.target.fqname + "()"
+		is AstExpr.NEW_WITH_CONSTRUCTOR -> dump(types, AstExpr.CALL_INSTANCE(AstExpr.NEW(expr.type), expr.constructor, expr.args.map { it.value }, isSpecial = false))
 		is AstExpr.TERNARY -> dump(types, expr.cond) + " ? " + dump(types, expr.etrue) + " : " + dump(types, expr.efalse)
 	//is AstExpr.REF -> "REF(" + dump(expr.expr) + ")"
 		is AstExpr.NEW_ARRAY -> "new " + expr.arrayType.element + "[" + expr.counts.map { dump(types, it) }.joinToString(", ") + "]"

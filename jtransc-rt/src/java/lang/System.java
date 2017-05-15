@@ -59,9 +59,10 @@ public class System {
 
 	@HaxeMethodBody("N.arraycopy(p0, p1, p2, p3, p4);")
 	@JTranscMethodBody(target = "js", value = "N.arraycopy(p0, p1, p2, p3, p4);")
-	@JTranscMethodBody(target = "cpp", value = "JA_0::copy((JA_0*)p0.get(), p1, (JA_0*)p2.get(), p3, p4);")
+	@JTranscMethodBody(target = "cpp", value = "JA_0::copy((JA_0*)p0, p1, (JA_0*)p2, p3, p4);")
 	@JTranscMethodBody(target = "d", value = "N.arraycopy(p0, p1, p2, p3, p4);")
 	@JTranscMethodBody(target = "cs", value = "N.arraycopy(p0, p1, p2, p3, p4);")
+	@JTranscMethodBody(target = "as3", value = "N.arraycopy(p0, p1, p2, p3, p4);")
 	public static void arraycopy(Object src, int srcPos, Object dest, int destPos, int length) {
 		if (src instanceof boolean[]) arraycopy((boolean[]) src, srcPos, (boolean[]) dest, destPos, length);
 		else if (src instanceof byte[]) arraycopy((byte[]) src, srcPos, (byte[]) dest, destPos, length);
@@ -201,6 +202,7 @@ public class System {
 	})
 	@JTranscMethodBody(target = "d", value = "return N.str(std.process.environment.get(N.istr2(p0)));")
 	@JTranscMethodBody(target = "cs", value = "return N.str(Environment.GetEnvironmentVariable(N.istr(p0)));")
+	@JTranscMethodBody(target = "as3", value = "return N.str(null);")
 	native public static String getenv(String name);
 
 	@HaxeMethodBody(target = "sys", value = "return N.hashMap(Sys.environment());")
@@ -230,6 +232,7 @@ public class System {
 	}
 
 	public static void load(String filename) {
+		Runtime.getRuntime().load(filename);
 	}
 
 	public static void loadLibrary(String libname) {

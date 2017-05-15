@@ -17,7 +17,6 @@
 package com.jtransc.ast.dependency
 
 import com.jtransc.ast.*
-import com.jtransc.error.invalidOp
 import com.jtransc.error.noImpl
 
 // @TODO: Use generic visitor!
@@ -56,7 +55,7 @@ object AstDependencyAnalyzer {
 				is AstExpr.CAST -> {
 					ana(expr.from)
 					ana(expr.to)
-					ana(expr.expr)
+					ana(expr.subject)
 				}
 				is AstExpr.NEW -> {
 					ana(expr.target)
@@ -140,6 +139,7 @@ object AstDependencyAnalyzer {
 					}
 				}
 				is AstExpr.LOCAL -> Unit
+				is AstExpr.TYPED_LOCAL -> Unit
 				is AstExpr.PARAM -> ana(expr.type)
 				is AstExpr.INVOKE_DYNAMIC_METHOD -> {
 					ana(expr.type)

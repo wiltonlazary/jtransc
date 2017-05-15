@@ -4,6 +4,7 @@ import com.jtransc.gradle.tasks.AbstractJTranscGradleTask
 import com.jtransc.gradle.tasks.JTranscGradleDistTask
 import com.jtransc.gradle.tasks.JTranscGradleRunTask
 import org.gradle.api.Project
+import java.io.File
 
 open class JTranscGradleExtension(val project: Project) {
 	companion object {
@@ -39,7 +40,7 @@ open class JTranscGradleExtension(val project: Project) {
 				it.target = target
 				it.outputFile = outputFile
 				it.minimizedNames = justBuild && minimizeNames
-				it.debug = if (debug) true else false
+				it.debug = debug
 				it.compile = compile
 			})).dependsOn("build")
 		}
@@ -52,6 +53,7 @@ open class JTranscGradleExtension(val project: Project) {
 	var extra = hashMapOf<String?, String?>()
 	var libraries = arrayListOf<String>()
 	var assets = arrayListOf<String>()
+	val newAssets = arrayListOf<File>()
 	var title: String? = null
 	var name: String? = null
 	var version: String? = null
@@ -75,6 +77,15 @@ open class JTranscGradleExtension(val project: Project) {
 	var mainClassName: String? = null
 	var treeshaking: Boolean? = null
 	var treeshakingTrace: Boolean? = null
+	var skipServiceLoaderClasses: ArrayList<String> = arrayListOf()
+
+	fun assets(vararg folders: String) {
+		newAssets += folders.map { File(project.buildFile.parentFile, it) }
+	}
+
+	fun skipServiceLoader(serviceLoader: String) {
+		skipServiceLoaderClasses.add(serviceLoader)
+	}
 
 	/*
 	Alias for:

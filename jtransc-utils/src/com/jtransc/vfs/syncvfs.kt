@@ -74,12 +74,11 @@ class SyncVfsFile(internal val vfs: SyncVfs, val path: String) {
 	fun <T> readSpecial(clazz: Class<T>): T = vfs.readSpecial(clazz, path)
 	fun write(data: ByteArray): Unit = vfs.write(path, data)
 	fun readString(encoding: Charset = Charsets.UTF_8): String = encoding.toString(vfs.read(path))
-	fun readLines(encoding: Charset = Charsets.UTF_8): List<String> = this.readString().lines()
+	fun readLines(encoding: Charset = Charsets.UTF_8): List<String> = this.readString(encoding).lines()
 	val exists: Boolean get() = vfs.exists(path)
 	val isDirectory: Boolean get() = stat().isDirectory
 	fun remove(): Unit = vfs.remove(path)
-	fun removeIfExists(): Unit = if (exists) remove() else {
-	}
+	fun removeIfExists(): Unit = if (exists) remove() else Unit
 
 	fun exec(cmdAndArgs: List<String>, options: ExecOptions = ExecOptions()): ProcessResult = vfs.exec(path, cmdAndArgs.first(), cmdAndArgs.drop(1), options)
 	fun exec(cmd: String, args: List<String>, options: ExecOptions): ProcessResult = vfs.exec(path, cmd, args, options)
@@ -207,7 +206,8 @@ data class ExecOptions(
 	val filter: ((line: String) -> Boolean)? = null,
 	val env: Map<String, String> = mapOf(),
     val sysexec: Boolean = false,
-	val fixencoding: Boolean = true
+	val fixencoding: Boolean = true,
+	val fixLineEndings: Boolean = true
 ) {
 	val redirect: Boolean get() = passthru
 }
@@ -590,7 +590,10 @@ private class MergedSyncVfs(val nodes: List<SyncVfsFile>) : SyncVfs() {
 	override fun read(path: String): ByteArray = op(path, "read") { it[path].read() }
 	override fun write(path: String, data: ByteArray) = op(path, "write") { it[path].write(data) }
 	override fun <T> readSpecial(clazz: Class<T>, path: String): T = op(path, "readSpecial") { it[path].readSpecial(clazz) }
-	override fun listdir(path: String): Iterable<SyncVfsStat> = op(path, "listdir") { it[path].listdir() }
+	override fun listdir(path: String): Iterable<SyncVfsStat> {
+		//op(path, "listdir") { it[path].listdir() }
+		return nodesSorted.flatMap { it.listdir() }
+	}
 	override fun mkdir(path: String) = op(path, "mkdir") { it[path].mkdir() }
 	override fun rmdir(path: String) = op(path, "rmdir") { it[path].rmdir() }
 	override fun exec(path: String, cmd: String, args: List<String>, options: ExecOptions): ProcessResult {

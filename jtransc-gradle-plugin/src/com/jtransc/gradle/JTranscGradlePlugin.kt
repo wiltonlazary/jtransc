@@ -46,6 +46,9 @@ open class JTranscGradlePlugin : Plugin<Project> {
 
 		val targets = ServiceLoader.load(GenTargetDescriptor::class.java).toList()
 
+		//println("JTransc Targets:")
+		//println(targets)
+
 		for (buildTarget in targets.flatMap { it.buildTargets }) {
 			addBuildTarget(buildTarget.name, buildTarget.target, buildTarget.outputFile, minimizeNames = buildTarget.minimizeNames)
 		}
@@ -60,6 +63,11 @@ open class JTranscGradlePlugin : Plugin<Project> {
 
 		project.configurations.create("jtranscRuntime")
 		project.configurations.create("jtransc")
+		project.configurations.create("nojtransc")
+
+		project.configurations["nojtransc"]!!.isTransitive = false
+		//project.configurations["nojtransc"]!!.isTransitive = false
+		//project.configurations["compile"]!!.extendsFrom(project.configurations["nojtransc"]!!)
 		for (artifact in BaseRuntimeArtifactsForVersion(jtranscVersion)) {
 			project.dependencies.add("jtranscRuntime", artifact.str)
 		}

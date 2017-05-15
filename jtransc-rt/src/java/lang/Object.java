@@ -42,6 +42,8 @@ import java.lang.reflect.Field;
 @JTranscAddFile(target = "d", priority = -1, process = true, prependAppend = "d/Base.d")
 @JTranscAddFile(target = "cs", priority = -1, process = true, prependAppend = "cs/Base.cs")
 @JTranscAddFile(target = "php", priority = -1, process = true, prependAppend = "php/Base.php")
+@JTranscAddFile(target = "as3", priority = -1, process = true, src = "as3/_project.as3proj", dst = "_project.as3proj")
+@JTranscAddFile(target = "as3", priority = -1, process = true, src = "as3/N.as", dst = "N.as")
 @JTranscAddFile(target = "as3", priority = -1, process = true, src = "as3/Main.as", dst = "Main.as")
 @JTranscAddFile(target = "as3", priority = -1, process = true, src = "as3/JA_0.as", dst = "JA_0.as")
 @JTranscAddFile(target = "as3", priority = -1, process = true, src = "as3/JA_Z.as", dst = "JA_Z.as")
@@ -53,24 +55,19 @@ import java.lang.reflect.Field;
 @JTranscAddFile(target = "as3", priority = -1, process = true, src = "as3/JA_F.as", dst = "JA_F.as")
 @JTranscAddFile(target = "as3", priority = -1, process = true, src = "as3/JA_D.as", dst = "JA_D.as")
 @JTranscAddFile(target = "as3", priority = -1, process = true, src = "as3/JA_L.as", dst = "JA_L.as")
-@JTranscAddFile(target = "as3", priority = -1, process = true, src = "as3/N.as", dst = "N.as")
+@JTranscAddFile(target = "as3", priority = -1, process = true, src = "as3/Int32.as", dst = "Int32.as")
+@JTranscAddFile(target = "as3", priority = -1, process = true, src = "as3/Int64.as", dst = "Int64.as")
+@JTranscAddFile(target = "as3", priority = -1, process = true, src = "as3/DivModResult.as", dst = "DivModResult.as")
 @JTranscAddFile(target = "as3", priority = -1, process = true, src = "as3/WrappedThrowable.as", dst = "WrappedThrowable.as")
 @JTranscAddFile(target = "as3", priority = -1, process = true, src = "as3/Main.xml", dst = "Main.xml")
+//@JTranscAddLibraries(target = "cpp", value = {"gc"})
 @JTranscAddMembers(target = "d", value = {
 	"core.sync.mutex.Mutex __d_mutex = null;",
 })
 public class Object {
 	@JTranscInvisible
-	static private int $$lastId = 0;
-
-	@JTranscInvisible
 	public int $$id;
 
-	public Object() {
-		$$id = $$lastId++;
-	}
-
-	//@JTranscKeep
 	public boolean equals(Object obj) {
 		return (this == obj);
 	}

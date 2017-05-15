@@ -20,6 +20,8 @@ class ServiceLoaderJTranscPlugin : JTranscPlugin() {
 		servicesToImpls.clear()
 		referencedServices.clear()
 
+		val classesToSkip = (program.injector.getOrNull<ConfigServiceLoader>()?.classesToSkip ?: listOf()).toSet()
+
 		//log.info("Referenced ServiceLoader!")
 
 		//println("--------------------------------------------")
@@ -36,11 +38,15 @@ class ServiceLoaderJTranscPlugin : JTranscPlugin() {
 				val targets = (targetRegex.find(comment)?.groups?.get(1)?.value ?: "").split(',').map { it.trim().toLowerCase() }.distinct().toSet()
 				val isForTarget = targetName.matches(targets.toList())
 				if (isForTarget) {
-					servicesToImpls[serviceName] = servicesToImpls[serviceName]!! + serviceImpl
-					log.info("Detected service: $serviceName with implementations $serviceImpl for targets $targets")
+					if (serviceImpl !in classesToSkip) {
+						servicesToImpls[serviceName] = servicesToImpls[serviceName]!! + serviceImpl
+						log.info("Detected service: $serviceName with implementations $serviceImpl for targets $targets")
+					} else {
+						log.info("Detected service NOT included because in skip list ${classesToSkip}: $serviceName with implementations $serviceImpl for targets $targets")
+					}
 					//println("Detected service: $serviceName with implementations $serviceImpl for targets $targets")
 				} else {
-					log.info("Detected service not included for $targetName: $serviceName with implementations $serviceImpl for targets $targets")
+					log.info("Detected service NOT included for $targetName: $serviceName with implementations $serviceImpl for targets $targets")
 					//println("Detected service not included for $targetName: $serviceName with implementations $serviceImpl for targets $targets")
 				}
 			}
@@ -79,7 +85,7 @@ class ServiceLoaderJTranscPlugin : JTranscPlugin() {
 				val impls = servicesToImpls[serviceName]!!
 				//println("$serviceName -> $impls")
 				IF(Objects_equals(nameArg.expr, serviceName.lit)) {
-					SET(out, NEW_ARRAY(ARRAY(OBJECT), impls.size.lit))
+					SET(out, ARRAY(OBJECT).newArray(impls.size))
 					for ((index, impl) in impls.withIndex()) {
 						//val ref = AstType.REF(impl.fqname)
 						val clazz = programBase[impl.fqname]
@@ -90,7 +96,7 @@ class ServiceLoaderJTranscPlugin : JTranscPlugin() {
 					RETURN(out)
 				}
 			}
-			RETURN(NEW_ARRAY(ARRAY(OBJECT), 0.lit))
+			RETURN(ARRAY(OBJECT).newArray(0))
 		}
 	}
 

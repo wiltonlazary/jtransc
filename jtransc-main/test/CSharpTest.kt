@@ -1,8 +1,13 @@
+import big.BigIOTest
 import big.BigTest
 import big.HelloWorldTest
 import com.jtransc.BuildBackend
 import com.jtransc.gen.cs.CSharpTarget
+import com.jtransc.gen.js.JsTarget
+import jtransc.ProcessTest
 import jtransc.micro.MicroHelloWorld
+import jtransc.staticinit.StaticInitTest
+import org.junit.Ignore
 import org.junit.Test
 import testservice.test.ServiceLoaderTest
 
@@ -35,5 +40,12 @@ class CSharpTest : Base() {
 		TestServiceCS
 	""", minimize = false)
 
-	@Test fun testBig() = testClass<BigTest>(minimize = false, log = false)
+	@Test fun testBig() = testClass<BigTest>(minimize = false, debug = false, log = false)
+
+	//@Test fun testMicroStaticInitTestAsm2() = testClass<StaticInitTest>(minimize = false, target = CSharpTarget(), log = false, backend = BuildBackend.ASM2, treeShaking = true)
+	@Test fun testMicroStaticInitTestAsm1() = testClass<StaticInitTest>(minimize = false, target = CSharpTarget(), log = false, backend = BuildBackend.ASM, treeShaking = true)
+
+
+	@Ignore("Not working fine yet")
+	@Test fun testBigIO() = testClass<BigIOTest>(minimize = false, log = false)
 }

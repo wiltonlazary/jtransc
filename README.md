@@ -18,6 +18,8 @@ Along JTransc, I'm writting a set of libraries to be able to use JTransc.
 
 [https://github.com/soywiz/korlibs](https://github.com/soywiz/korlibs)
 
+Kotlin Game Engine that uses JTransc for multiplatform: [https://github.com/soywiz/korge](https://github.com/soywiz/korge)
+
 # What is this?
 
 JTransc (Java Trans Compiler) is an AOT (ahead of time compiler) that compiles .class and .jar files
@@ -62,7 +64,7 @@ This is the preferred way of using JTransc. You can include it from maven centra
 
 ```
 plugins {
-  id "com.jtransc" version "0.5.13"
+  id "com.jtransc" version "0.5.16"
 }
 ```
 
@@ -101,6 +103,10 @@ So others could generate that without JVM and others could generate other target
 
 ## Tool dependencies:
 
+### Java:
+- Oracle JDK8 (Verified 8u131)
+- Android SDK Tools  (Verified 25.2.3)
+
 ### For the Haxe target:
 - Haxe 3.4.2
 - NekoVM 2.1.0
@@ -108,21 +114,22 @@ So others could generate that without JVM and others could generate other target
 - hxcpp 3.4.64
 
 ### For Node.JS running:
-- NodeJS 6.9.5 with npm
+- NodeJS 7.10.0 with npm 4.2.0
 
 ### For D target:
-- DMD2 or GDC or LDC
+- DMD2 or GDC or LDC (Verified dmd-2.074.0)
 
 ### For C++ target:
 - Clang++ or g++
 
-### Windows
+### Verified on Windows 10.0.15063 and macOS Sierra 10.12.4
+
+#### Installing JDK
+- Install [JDK8](http://www.oracle.com/technetwork/java/javase/downloads/)
+- Install [Android SDK Tools](https://developer.android.com/studio/index.html)
 
 #### Installing Haxe
-- Install [Haxe](https://haxe.org/download/) from here
-- When not using an installer, please grab NekoVM binaries too [NekoVM](http://nekovm.org/download)
-- Add HAXEPATH environment variable if you are not using an installer: "path/to/haxe" and NEKO_INSTPATH = "path/to/neko" 
-- Add in Path HAXEPATH and NEKO_INSTPATH # With installation package Haxe and NekoVM not needed
+- Install [Haxe](https://haxe.org/download/) from here via installer
 - Set path to haxelib running "haxelib setup" command
 - Install [Lime](http://www.openfl.org/builds/lime/) `haxelib install lime 4.0.3`
 - Install [hxcpp](http://nmehost.com/hxcpp/) `haxelib install hxcpp 3.4.64`
@@ -132,9 +139,13 @@ So others could generate that without JVM and others could generate other target
 - Install [NodeJS + npm](https://nodejs.org/en/)
 
 #### Installing D
-- Download [DMD](https://dlang.org/download.html#dmd) dmd-2.073.1.exe
+- Download [DMD](https://dlang.org/download.html#dmd)
 - Install DMD with all extras
 
 #### Installing C++ suitable compiler
-- Install [mingw-w64](https://sourceforge.net/projects/mingw-w64/) v6.3.0 -> x68_64-posix-seh Revision 1
+__WINDOWS__
+- Install [mingw-w64](https://sourceforge.net/projects/mingw-w64/) v7.1.0 -> x68_64-posix-seh Revision 0
 - Add "path/to/mingw64" to `PATH` environment variable
+
+__MAC__
+- Install Xcode 8.3.2

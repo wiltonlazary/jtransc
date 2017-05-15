@@ -6,10 +6,7 @@ import com.jtransc.util.JTranscStrings
 import issues.Issue100Double
 import issues.Issue94Enum
 import javatest.*
-import javatest.lang.AtomicTest
-import javatest.lang.BasicTypesTest
-import javatest.lang.StringsTest
-import javatest.lang.SystemTest
+import javatest.lang.*
 import javatest.misc.BenchmarkTest
 import javatest.misc.MiscTest
 import javatest.sort.CharCharMapTest
@@ -17,7 +14,6 @@ import javatest.sort.ComparableTimSortTest
 import javatest.utils.Base64Test
 import javatest.utils.CopyTest
 import javatest.utils.DateTest
-import jtransc.ProcessTest
 import jtransc.WrappedTest
 import jtransc.bug.*
 import jtransc.java8.DefaultMethodsTest
@@ -34,17 +30,20 @@ import java.util.*
 object BigTest {
 	@Throws(Throwable::class)
 	@JvmStatic fun main(args: Array<String>) {
-		KotlinPropertiesTest.main(args)
+		//Thread.sleep(5000L)
+		//KotlinPropertiesTest.main(args)
 
 		// Misc tests
 		StringsTest.main(args)
+		PropertiesTest.main(args);
+		BasicTypesTest.main(args)
 		SystemTest.main(args)
 		CopyTest.main(args)
 		AtomicTest.main(args);
 		FastMemoryTest.main(args)
 		FastMemoryTest.main(args)
 		MultidimensionalArrayTest.main(args)
-		KotlinCollections.main(args)
+		//KotlinCollections.main(args)
 		//KotlinInheritanceTest.main(args)
 		SimdTest.main(args)
 		MiscTest.main(args)
@@ -60,11 +59,10 @@ object BigTest {
 		JTranscNioTest.main(args)
 		JTranscArithmeticTest.main(args)
 		MathTest.main(args)
-		BasicTypesTest.main(args)
 		DateTest.main(args)
 		AtomicTest.main(args)
 		JTranscBug12Test.main(args)
-		JTranscBug12Test2Kotlin.main(args)
+		//JTranscBug12Test2Kotlin.main(args)
 		JTranscBug14Test.main(args)
 		JTranscBugArrayGetClass.main(args)
 		JTranscBugArrayDynamicInstantiate.main(args)
@@ -94,14 +92,12 @@ object BigTest {
 		ComparableTimSortTest.main(args)
 
 		// Java8 tests
-		JTranscClinitNotStatic.main(args)
-		DefaultMethodsTest.main(args)
-		Java8Test.main(args)
+		//JTranscClinitNotStatic.main(args)
+		//DefaultMethodsTest.main(args)
+		//Java8Test.main(args)
 
 		// Misc
 		Base64Test.main(args);
-		JTranscZipTest.main(args)
-		ProcessTest.main(args)
 		CharCharMapTest.main(args);
 
 		// Regex
@@ -118,7 +114,7 @@ object BigTest {
 		HelloWorldTest.main(args)
 		NumberFormatTest.main(args);
 
-		NumberFormatTest2.main(args);
+		//NumberFormatTest2.main(args);
 
 		KotlinStaticInitOrderTest.main(args)
 
@@ -130,6 +126,8 @@ object BigTest {
 
 		Issue94Enum.main(args)
 		Issue100Double.main(args)
+
+		CaseInsensitiveOrder.main(args);
 
 		System.out.println(String.format("%d%%", 100))
 	}
@@ -239,6 +237,19 @@ object NumberFormatTest2 {
 	} catch (e: NumberFormatException) {
 		//-1.0
 		false
+	}
+}
+
+private class CaseInsensitiveOrder {
+	companion object {
+		@JvmStatic fun main(args: Array<String>) {
+			val tm = TreeMap<String, String>(String.CASE_INSENSITIVE_ORDER)
+			tm["Ab"] = "hello";
+			println(tm["ab"])
+			println(tm["aB"])
+			println(tm["Ab"])
+			println(tm["AB"])
+		}
 	}
 }
 

@@ -137,11 +137,17 @@ public final class Class<T> implements java.io.Serializable, Type, GenericDeclar
 
 	native public TypeVariable<Class<T>>[] getTypeParameters();
 
-	native public Type getGenericSuperclass();
+	public Type getGenericSuperclass() {
+		Type type = (Type) JTranscCoreReflection.getSuperclassById(this.id);
+		return type;
+	}
 
 	native public Package getPackage();
 
-	native public Type[] getGenericInterfaces();
+	// @TODO:
+	public Type[] getGenericInterfaces() {
+		return new Type[0];
+	}
 
 	public Class<?> getComponentType() {
 		if (isArray()) {

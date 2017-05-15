@@ -1,5 +1,9 @@
 var _global = (typeof window !== "undefined") ? window : global;
 
+if ('á'.charCodeAt(0) != 225) {
+	throw 'Encoding must be UTF-8. Please add <META http-equiv="Content-Type" content="text/html; charset=utf-8" /> to the html';
+}
+
 // Polyfills
 Array.prototype.includes = Array.prototype.includes || (function(searchElement /*, fromIndex*/ ) {
 	var O = Object(this);
@@ -521,6 +525,16 @@ function __createJavaArrayType(desc, type, elementBytesSize) {
     	return out;
     };
 
+	//override fun genStmSetArrayLiterals(stm: AstStm.SET_ARRAY_LITERALS) // Use typedarrays
+	//ARRAY.prototype['setTypedArraySlice'] = function(startIndex, array) {
+	//	this.data.set(array, startIndex);
+	//};
+
+	// @TODO: Check performance
+	//ARRAY.prototype['setArraySlice'] = function(startIndex, array) {
+	//	this.data.set(new type(array), startIndex);
+	//};
+
 	__addArrayJavaMethods(ARRAY);
 
 	return ARRAY;
@@ -852,13 +866,6 @@ N.byteArrayToString = N.intArrayToString = N.charArrayToString = function(array,
 	return out;
 };
 
-N.stringToByteArray = function(str, encoding) {
-	// @TODO: Handle encoding!
-	var out = new JA_B(str.length);
-	for (var n = 0; n < str.length; n++) out.set(n, str.charCodeAt(n));
-	return out;
-};
-
 N.stringToCharArray = function(str) {
 	var out = new JA_C(str.length);
 	for (var n = 0; n < str.length; n++) out.set(n, str.charCodeAt(n));
@@ -1143,11 +1150,8 @@ N.getByteArray = function(v) {
 
 N.clone = function(obj) {
 	if (obj == null) return null;
-
 	var temp = Object.create(obj);
-
-	temp['{% FIELD java.lang.Object:$$id %}'] = {% SFIELD java.lang.Object:$$lastId %}++;
-
+	temp['{% FIELD java.lang.Object:$$id %}'] = 0;
 	return temp;
 };
 

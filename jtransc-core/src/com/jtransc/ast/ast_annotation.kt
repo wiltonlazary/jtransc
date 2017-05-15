@@ -1,6 +1,7 @@
 package com.jtransc.ast
 
 import com.jtransc.annotation.JTranscMethodBodyList
+import com.jtransc.error.invalidOp
 import com.jtransc.gen.TargetName
 import com.jtransc.log.log
 import com.jtransc.org.objectweb.asm.Type
@@ -22,8 +23,10 @@ data class AstAnnotation(
 		}
 	}
 
+	fun getAnnotationAnnotations(program: AstProgram): AstAnnotationList = program[type]?.annotationsList ?: AstAnnotationList(type, listOf())
+
 	fun getAllDescendantAnnotations(): List<AstAnnotation> {
-		var out = arrayListOf<AstAnnotation>()
+		val out = arrayListOf<AstAnnotation>()
 		out.add(this)
 		out.addAll(getAllDescendantAnnotations(this))
 		return out
@@ -104,6 +107,7 @@ fun AstAnnotation.getRefTypesFqName(): List<FqName> {
 
 class AstAnnotationList(val containerRef: AstRef, val list: List<AstAnnotation>) {
 	val byClassName by lazy { list.groupBy { it.type.fqname } }
+	val listRuntime by lazy { list.filter { it.runtimeVisible } }
 
 	inline fun <reified TItem : Any, reified TList : Any> getTypedList(field: KProperty1<TList, Array<TItem>>): List<TItem> {
 		val single = this.getTyped<TItem>()
@@ -131,4 +135,8 @@ fun AstAnnotationList.getBodiesForTarget(targetName: TargetName): List<NativeBod
 
 fun AstAnnotationList.getCallSiteBodiesForTarget(targetName: TargetName): String? {
 	return this.getTypedList(com.jtransc.annotation.JTranscCallSiteBodyList::value).filter { targetName.matches(it.target) }.map { it.value.joinToString("\n") }.firstOrNull()
+}
+
+fun AstAnnotationList.getHeadersForTarget(targetName: TargetName): List<String> {
+	return this.getTypedList(com.jtransc.annotation.JTranscAddHeaderList::value).filter { targetName.matches(it.target) }.flatMap { it.value.toList() }
 }

@@ -1,11 +1,6 @@
 package java.lang.reflect;
 
 import com.jtransc.annotation.JTranscInvisible;
-import com.jtransc.annotation.JTranscMethodBody;
-import com.jtransc.annotation.JTranscVisible;
-import com.jtransc.annotation.haxe.HaxeAddMembers;
-import com.jtransc.annotation.haxe.HaxeMethodBody;
-import com.jtransc.io.JTranscConsole;
 import j.MemberInfo;
 import j.ProgramReflection;
 
@@ -113,6 +108,20 @@ abstract public class MethodConstructor extends AccessibleObject {
 
 	public Class<?>[] getParameterTypes() {
 		return (Class<?>[]) methodType().args;
+	}
+
+	//private Parameter[] _parameters;
+	private Parameter[] _params; // @TODO: Bug with keywords in D target. Have to fix! This is just a workaround!
+
+	public Parameter[] getParameters() {
+		if (_params == null) {
+			Class<?>[] parameterTypes = getParameterTypes();
+			_params = new Parameter[parameterTypes.length];
+			for (int n = 0; n < parameterTypes.length; n++) {
+				_params[n] = new Parameter(this, n);
+			}
+		}
+		return _params.clone();
 	}
 
 	public boolean isVarArgs() {

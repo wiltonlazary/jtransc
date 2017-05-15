@@ -14,42 +14,59 @@
  * limitations under the License.
  */
 
+import big.BigIOTest
 import big.BigTest
 import big.HelloWorldTest
 import big.NumberFormatTest2
 import com.jtransc.BuildBackend
 import com.jtransc.gen.js.JsTarget
+import com.jtransc.plugin.service.ConfigServiceLoader
 import issues.Issue100Double
+import issues.Issue105
+import javatest.ExtendedCharsets
 import javatest.MemberCollisionsTest
 import javatest.MessageDigestTest
 import javatest.misc.BenchmarkTest
 import javatest.misc.TryFinallyCheck
+import javatest.net.URLEncoderDecoderTest
 import jtransc.ExtraKeywordsTest
 import jtransc.ExtraRefsTest
+import jtransc.ProcessTest
+import jtransc.bug.JTranscBug110
 import jtransc.jtransc.js.ScriptEngineTest
 import jtransc.jtransc.nativ.JTranscJsNativeMixedTest
 import jtransc.micro.MicroHelloWorld
 import jtransc.ref.MethodBodyReferencesTest
 import jtransc.staticinit.StaticInitTest
+import org.junit.Ignore
 import org.junit.Test
 import testservice.test.ServiceLoaderTest
+import testservice.test.TestServiceJs2
 
 class JsTest : Base() {
+	@Test fun testJTranscBug110() = testClass<JTranscBug110>(minimize = false, target = JsTarget(), log = false, treeShaking = true)
+
 	@Test fun testScriptEngine() = testClass<ScriptEngineTest>(minimize = false, target = JsTarget(), log = false, treeShaking = true)
 
-	@Test fun testMicroHelloWorld() = testClass<MicroHelloWorld>(minimize = false, target = JsTarget(), log = false, treeShaking = true)
+	@Test fun testMicroHelloWorld() = testClass<MicroHelloWorld>(minimize = true, target = JsTarget(), log = false, treeShaking = true)
+
+	@Test fun testURLEncoderDecoder() = testClass<URLEncoderDecoderTest>(minimize = false, target = JsTarget(), log = false, treeShaking = true)
 
 	//@Test fun testIssue100Double() = testClass<Issue100Double>(minimize = true, target = JsTarget(), log = true, treeShaking = true, debug = true)
 	@Test fun testIssue100Double() = testClass<Issue100Double>(minimize = true, target = JsTarget(), log = false, treeShaking = true)
 
+	@Test fun testIssue105() = testClass<Issue105>(minimize = false, target = JsTarget(), log = false, treeShaking = true)
+
+	@Test fun testExtendedCharsets() = testClass<ExtendedCharsets>(minimize = false, target = JsTarget(), log = false, treeShaking = true)
+
 	@Test fun testMessageDigestTest() = testClass<MessageDigestTest>(minimize = false, target = JsTarget(), log = false, treeShaking = true)
 
-	@Test fun testMicroHelloWorldAsm2() = testClass<MicroHelloWorld>(minimize = false, target = JsTarget(), log = false, treeShaking = true, backend = BuildBackend.ASM2)
+	//@Test fun testMicroHelloWorldAsm2() = testClass<MicroHelloWorld>(minimize = false, target = JsTarget(), log = false, treeShaking = true, backend = BuildBackend.ASM2)
 	//@Test fun testMicroHelloWorldAsm2() = testClass<MicroHelloWorld>(minimize = false, target = JsTarget(), log = false, treeShaking = true, backend = BuildBackend.ASM2)
 	//@Test fun testMicroHelloWorldAsm2() = testClass<HelloWorldTest>(minimize = false, target = JsTarget(), log = false, treeShaking = true, backend = BuildBackend.ASM2)
 	//@Test fun testMicroHelloWorldAsm2() = testClass<BenchmarkTest>(minimize = false, target = JsTarget(), log = false, treeShaking = true, backend = BuildBackend.ASM2)
 
-	@Test fun testMicroStaticInitTest() = testClass<StaticInitTest>(minimize = false, target = JsTarget(), log = false, treeShaking = true)
+	@Test fun testMicroStaticInitTest() = testClass<StaticInitTest>(minimize = false, target = JsTarget(), log = false, backend = BuildBackend.ASM, treeShaking = true)
 
 	@Test fun testHelloWorld() = testClass<HelloWorldTest>(minimize = false, target = JsTarget(), log = false)
 	@Test fun testBenchmarkTest() = testClass<BenchmarkTest>(minimize = false, target = JsTarget(), log = false)
@@ -57,7 +74,13 @@ class JsTest : Base() {
 	@Test fun testServiceLoaderTest() = testNativeClass<ServiceLoaderTest>("""
 		TestServiceImpl1.test:ss
 		TestServiceJs10
-	""", target = JsTarget(), minimize = false)
+	""", target = JsTarget(), minimize = false, configureInjector = {
+		mapInstance(ConfigServiceLoader(
+			classesToSkip = listOf(
+				TestServiceJs2::class.java.name
+			)
+		))
+	})
 
 	@Test fun customRun() = testNativeClass<JTranscJsNativeMixedTest>("""
 		17
@@ -120,6 +143,7 @@ class JsTest : Base() {
 
 	@Test fun testPlainJs() = testClass<BigTest>(minimize = false, target = JsTarget(), log = false)
 	@Test fun testPlainJsMin() = testClass<BigTest>(minimize = true, target = JsTarget(), log = false)
+	@Test fun testBigIO() = testClass<BigIOTest>(minimize = true, target = JsTarget(), log = false, treeShaking = true)
 
 	@Test fun testNumberFormatTest2() = testClass<NumberFormatTest2>(minimize = false, target = JsTarget(), log = false)
 

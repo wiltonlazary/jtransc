@@ -25,6 +25,7 @@ import com.jtransc.ds.cast
 import com.jtransc.ds.clearFlags
 import com.jtransc.ds.hasFlag
 import com.jtransc.error.InvalidOperationException
+import com.jtransc.error.firstMapOrNull
 import com.jtransc.error.invalidOp
 import com.jtransc.gen.TargetName
 import com.jtransc.injector.Injector
@@ -253,6 +254,7 @@ class AstProgram(
 	override operator fun get(ref: AstMethodRef): AstMethod? = this[ref.containingClass].getMethodInAncestorsAndInterfaces(ref.nameDesc)
 	//override operator fun get(ref: AstFieldRef): AstField = this[ref.containingClass][ref]
 	override operator fun get(ref: AstFieldRef): AstField = this[ref.containingClass].get(ref.withoutClass)
+
 	operator fun get(ref: FieldRef): AstField = this[ref.ref.containingClass].get(ref.ref.withoutClass)
 
 	operator fun get(ref: AstFieldWithoutTypeRef): AstField = this[ref.containingClass].get(ref)
@@ -313,12 +315,18 @@ open class AstAnnotatedElement(
 ) : AstAnnotated {
 	var extraKeep: Boolean? = null
 	var extraVisible: Boolean? = null
-	val keep: Boolean get() = extraKeep ?: annotationsList.contains<JTranscKeep>()
+	val keep: Boolean get() {
+		if (extraKeep ?: annotationsList.contains<JTranscKeep>()) return true
+		for (annotation in annotationsList.list) {
+			if (annotation.getAnnotationAnnotations(program).contains<JTranscKeep>()) return true
+		}
+		return false
+	}
 	//val visible: Boolean get() = annotationsList.contains<JTranscVisible>() || !annotationsList.contains<JTranscInvisible>()
 	val visible: Boolean get() = extraVisible ?: !annotationsList.contains<JTranscInvisible>()
 	val invisible: Boolean get() = !visible
-	override val annotationsList = AstAnnotationList(elementRef, annotations)
-	val runtimeAnnotations = annotations.filter { it.runtimeVisible }
+	override val annotationsList by lazy { AstAnnotationList(elementRef, annotations) }
+	val runtimeAnnotations by lazy { annotations.filter { it.runtimeVisible } }
 }
 
 val AstAnnotated?.keepName: Boolean get() = this?.annotationsList?.contains<JTranscKeepName>() ?: false
@@ -427,26 +435,18 @@ class AstClass(
 	}
 
 	fun add(field: AstField) {
-		if (finished) invalidOp("Finished class")
 		fields.add(field)
 		fieldsByInfo[field.refWithoutClass] = field
 		fieldsByName[field.name] = field
 	}
 
 	fun add(method: AstMethod) {
-		if (finished) invalidOp("Finished class")
 		methods.add(method)
 		if (method.name !in methodsByName) methodsByName[method.name] = arrayListOf()
 		val methodDesc = AstMethodWithoutClassRef(method.name, method.methodType)
 		methodsByName[method.name]?.add(method)
 		methodsByNameDescInterfaces[methodDesc] = method
 		methodsByNameDesc[methodDesc] = method
-	}
-
-	private var finished = false
-
-	fun finish() {
-		finished = true
 	}
 
 	//val dependencies: AstReferences = AstReferences()
@@ -520,8 +520,12 @@ class AstClass(
 	operator fun get(ref: AstFieldRef): AstField = fieldsByInfo[ref.withoutClass] ?:
 		invalidOp("Can't find field $ref")
 
-	operator fun get(ref: AstFieldWithoutClassRef): AstField = fieldsByInfo[ref] ?: parentClass?.get(ref) ?:
-		invalidOp("Can't find field $ref on ancestors")
+	fun getOrNull(ref: AstFieldWithoutClassRef): AstField? =
+		fieldsByInfo[ref]
+			?: parentClass?.getOrNull(ref)
+			?: allInterfacesInAncestors.firstMapOrNull { it.getOrNull(ref) }
+
+	operator fun get(ref: AstFieldWithoutClassRef): AstField = getOrNull(ref) ?: invalidOp("Can't find field $ref on ancestors or interfaces")
 
 	operator fun get(ref: AstFieldWithoutTypeRef): AstField = fieldsByName[ref.name] ?: parentClass?.get(ref) ?:
 		invalidOp("Can't find field $ref on ancestors")
@@ -722,15 +726,15 @@ class AstMethod(
 	val hasBody: Boolean get() = body != null
 
 	fun replaceBody(stmGen: () -> AstStm) {
-		this.generateBody = { AstBody(types, stmGen(), methodType) }
+		this.generateBody = { AstBody(types, stmGen(), methodType, ref) }
 		calculatedBodyDependencies = null
 		generatedBody = false
 	}
 
 	fun replaceBodyOpt(stmGen: () -> AstStm) {
 		this.generateBody = {
-			val body = AstBody(types, stmGen(), methodType)
-			AstOptimizer(AstBodyFlags(false, types)).visit(body)
+			val body = AstBody(types, stmGen(), methodType, ref)
+			AstOptimizer(AstBodyFlags(types, false)).visit(body)
 			body
 		}
 		calculatedBodyDependencies = null
@@ -739,10 +743,10 @@ class AstMethod(
 
 	fun replaceBodyOptBuild(stmGen: AstBuilder2.(args: List<AstArgument>) -> Unit) {
 		this.generateBody = {
-			val builder = AstBuilder2(types)
+			val builder = AstBuilder2(types, AstBuilderBodyCtx())
 			builder.stmGen(methodType.args)
-			val body = AstBody(types, builder.genstm(), methodType)
-			AstOptimizer(AstBodyFlags(false, types)).visit(body)
+			val body = AstBody(types, builder.genstm(), methodType, ref)
+			AstOptimizer(AstBodyFlags(types, false)).visit(body)
 			body
 		}
 		calculatedBodyDependencies = null
@@ -750,7 +754,7 @@ class AstMethod(
 	}
 
 	fun replaceBody(stm: AstStm) {
-		this.generateBody = { AstBody(types, stm, methodType) }
+		this.generateBody = { AstBody(types, stm, methodType, ref) }
 		calculatedBodyDependencies = null
 		generatedBody = false
 	}
