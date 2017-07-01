@@ -57,6 +57,8 @@ public final class Double extends Number implements Comparable<Double> {
 	@JTranscMethodBody(target = "d", value = "return to!double(N.istr(p0));")
 	@JTranscMethodBody(target = "cs", value = "return Double.Parse(N.istr(p0), System.Globalization.CultureInfo.InvariantCulture);")
 	@JTranscMethodBody(target = "as3", value = "return parseFloat(N.istr(p0));")
+	@JTranscMethodBody(target = "dart", value = "return num.parse(N.istr(p0));")
+	@JTranscMethodBody(target = "php", value = "return (float)(N::istr($p0));")
 	native private static double _parseDouble(String value);
 
 	public static double parseDouble(String value) {
@@ -65,19 +67,23 @@ public final class Double extends Number implements Comparable<Double> {
 	}
 
 	@HaxeMethodBody("return Math.isNaN(p0);")
+	@JTranscMethodBody(target = "php", value = "return is_nan($p0);")
 	@JTranscMethodBody(target = "js", value = "return isNaN(p0);")
 	@JTranscMethodBody(target = "cpp", value = "return std::isnan(p0);")
 	@JTranscMethodBody(target = "d", value = "return std.math.isNaN(p0);")
 	@JTranscMethodBody(target = "cs", value = "return Double.IsNaN(p0);")
 	@JTranscMethodBody(target = "as3", value = "return isNaN(p0);")
+	@JTranscMethodBody(target = "dart", value = "return p0.isNaN;")
 	native public static boolean isNaN(double v);
 
 	@HaxeMethodBody("return Math.isFinite(p0);")
+	@JTranscMethodBody(target = "php", value = "return is_finite($p0);")
 	@JTranscMethodBody(target = "js", value = "return isFinite(p0);")
 	@JTranscMethodBody(target = "cpp", value = "return std::isfinite(p0);")
 	@JTranscMethodBody(target = "d", value = "return to!bool(std.math.isFinite(p0));")
 	@JTranscMethodBody(target = "cs", value = "return !double.IsNaN(p0) && !double.IsInfinity(p0);")
 	@JTranscMethodBody(target = "as3", value = "return !isNaN(p0) && isFinite(p0);")
+	@JTranscMethodBody(target = "dart", value = "return p0.isFinite;")
 	native private static boolean _isFinite(double v);
 
 	public static boolean isInfinite(double v) {
@@ -153,6 +159,8 @@ public final class Double extends Number implements Comparable<Double> {
 	@JTranscMethodBody(target = "d", value = "return *cast(long *)&p0;")
 	@JTranscMethodBody(target = "cs", value = "return N.doubleToLongBits(p0);")
 	@JTranscMethodBody(target = "as3", value = "return N.doubleToLongBits(p0);")
+	@JTranscMethodBody(target = "dart", value = "return N.doubleToLongBits(p0);")
+	@JTranscMethodBody(target = "php", value = "return N::doubleToLongBits($p0);")
 	native public static long doubleToLongBits(double value);
 
 	@HaxeMethodBody("return N.doubleToLongBits(p0);")
@@ -161,6 +169,8 @@ public final class Double extends Number implements Comparable<Double> {
 	@JTranscMethodBody(target = "d", value = "return *cast(long *)&p0;")
 	@JTranscMethodBody(target = "cs", value = "return N.doubleToLongBits(p0);")
 	@JTranscMethodBody(target = "as3", value = "return N.doubleToLongBits(p0);")
+	@JTranscMethodBody(target = "dart", value = "return N.doubleToLongBits(p0);")
+	@JTranscMethodBody(target = "php", value = "return N::doubleToLongBits($p0);")
 	native public static long doubleToRawLongBits(double value);
 
 	@HaxeMethodBody("return N.longBitsToDouble(p0);")
@@ -169,6 +179,8 @@ public final class Double extends Number implements Comparable<Double> {
 	@JTranscMethodBody(target = "d", value = "return *cast(double *)&p0;")
 	@JTranscMethodBody(target = "cs", value = "return N.longBitsToDouble(p0);")
 	@JTranscMethodBody(target = "as3", value = "return N.longBitsToDouble(p0);")
+	@JTranscMethodBody(target = "dart", value = "return N.longBitsToDouble(p0);")
+	@JTranscMethodBody(target = "php", value = "return N::longBitsToDouble($p0);")
 	public static native double longBitsToDouble(long bits);
 
 	public int compareTo(Double that) {

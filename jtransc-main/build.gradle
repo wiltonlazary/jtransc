@@ -1,3 +1,4 @@
+apply from: '../includeCommon.gradle'
 apply from: '../include.gradle'
 apply plugin: 'idea'
 
@@ -20,6 +21,7 @@ dependencies {
 	compile project(':jtransc-gen-cs')
 	compile project(':jtransc-gen-php')
 	compile project(':jtransc-gen-as3')
+	compile project(':jtransc-gen-dart')
 
 	provided project(':jtransc-rt') // Needs to be provided so it doesn't include at runtime
 	//compileOnly project(':jtransc-rt') // Needs to be provided so it doesn't include at runtime

@@ -26,17 +26,19 @@ import com.jtransc.error.invalidOp
 import com.jtransc.gen.GenTargetDescriptor
 import com.jtransc.gen.GenTargetSubDescriptor
 import com.jtransc.gen.TargetName
+import com.jtransc.gen.common.CommonGenerator
 import com.jtransc.injector.Injector
 import com.jtransc.io.ProcessResult2
 import com.jtransc.log.log
 import com.jtransc.maven.MavenLocalRepository
 import com.jtransc.plugin.JTranscPlugin
+import com.jtransc.plugin.JTranscPluginGroup
+import com.jtransc.plugin.toGroup
 import com.jtransc.time.measureProcess
 import com.jtransc.time.measureTime
 import com.jtransc.vfs.LocalVfs
 import com.jtransc.vfs.MergedLocalAndJars
 import com.jtransc.vfs.SyncVfsFile
-import j.ProgramReflection
 import java.io.File
 import java.util.*
 
@@ -86,22 +88,14 @@ class JTranscBuild(
 	fun buildWithoutRunning() = _buildAndRun(captureRunOutput = false, run = false)
 	fun buildAndRun(captureRunOutput: Boolean, run: Boolean = true) = _buildAndRun(captureRunOutput = captureRunOutput, run = run)
 
-	class Result(val process: ProcessResult2)
+	class Result(val process: ProcessResult2, val generator: CommonGenerator)
 
 	private fun _buildAndRun(captureRunOutput: Boolean = true, run: Boolean = false): Result {
-		// @TODO: allow to add plugins from gradle
-		val plugins = ServiceLoader.load(JTranscPlugin::class.java).toList().sortedBy { it.priority }
-		val pluginNames = plugins.map { it.javaClass.simpleName }
+		val targetName = target.targetName
 
 		val classPaths2 = (settings.rtAndRtCore + target.extraLibraries.flatMap { MavenLocalRepository.locateJars(it) } + configClassPaths.classPaths).distinct()
 
-		log("AllBuild.build(): language=$target, subtarget=$subtarget, entryPoint=$entryPoint, output=$output, targetDirectory=$targetDirectory, plugins=$pluginNames")
-		//for (cp in classPaths2) log("ClassPath: $cp")
-
-		val initialClasses = listOf(
-			"j.ProgramReflection", // @TODO: This shouldn't be necessary. But haxe target requires it or strings are not initialized when generating reflection types.
-			entryPoint.fqname.fqname
-		)
+		val initialClasses = listOf(entryPoint.fqname.fqname)
 
 		injector.mapInstances(
 			ConfigClassPaths(classPaths2),
@@ -113,8 +107,19 @@ class JTranscBuild(
 			ConfigRun(run),
 			ConfigOutputPath(LocalVfs(File("$tempdir/out_ast"))),
 			ConfigMainClass(entryPoint),
-			TargetName(target.name)
+			targetName
 		)
+
+		val plugins = ServiceLoader.load(JTranscPlugin::class.java).toList().sortedBy { it.priority }.toGroup(injector)
+		val pluginNames = plugins.plugins.map { it.javaClass.simpleName }
+
+		injector.mapInstance(plugins)
+
+		log("AllBuild.build(): language=$target, subtarget=$subtarget, entryPoint=$entryPoint, output=$output, targetDirectory=$targetDirectory, plugins=$pluginNames")
+		//for (cp in classPaths2) log("ClassPath: $cp")
+
+
+		plugins.initialize(injector)
 
 		when (backend) {
 			BuildBackend.ASM -> injector.mapImpl<AstClassGenerator, AsmToAst1>()
@@ -126,9 +131,7 @@ class JTranscBuild(
 			generateProgram(plugins)
 		}
 
-		for (plugin in plugins) {
-			plugin.processBeforeTreeShaking(programBase)
-		}
+		plugins.processBeforeTreeShaking(programBase)
 
 		val configTreeShaking = injector.get<ConfigTreeShaking>()
 		val program = if (configTreeShaking.treeShaking) {
@@ -137,9 +140,7 @@ class JTranscBuild(
 			programBase
 		}
 
-		for (plugin in plugins) {
-			plugin.processAfterTreeShaking(program)
-		}
+		plugins.processAfterTreeShaking(program)
 
 		injector.mapInstance(program)
 		injector.mapInstance(program, AstResolver::class.java)
@@ -155,13 +156,15 @@ class JTranscBuild(
 		for (featureClass in MissingFeatureClasses) AllPluginFeaturesMap[featureClass]!!.onMissing(program, settings, types)
 		for (featureClass in SupportedFeatureClasses) AllPluginFeaturesMap[featureClass]!!.onSupported(program, settings, types)
 
-		genStaticInitOrder(program)
+		plugins.onAfterAppliedClassFeatures(program)
+
+		genStaticInitOrder(program, plugins)
 
 		//val programDced = measureProcess("Simplifying AST") { SimpleDCE(program, programDependencies) }
 		return target.build(injector)
 	}
 
-	fun generateProgram(plugins: List<JTranscPlugin>): AstProgram {
+	fun generateProgram(plugins: JTranscPluginGroup): AstProgram {
 		val injector: Injector = injector.get()
 		val configClassNames: ConfigInitialClasses = injector.get()
 		val configMainClass: ConfigMainClass = injector.get()
@@ -190,11 +193,11 @@ class JTranscBuild(
 		val targetName = TargetName(target.name)
 
 		val (elapsed) = measureTime {
-			for (plugin in plugins) plugin.onStartBuilding(program)
+			plugins.onStartBuilding(program)
 
 			while (true) {
 				if (!program.hasClassToGenerate()) {
-					for (plugin in plugins) plugin.onAfterAllClassDiscovered(program)
+					plugins.onAfterAllClassDiscovered(program)
 
 					if (!program.hasClassToGenerate()) {
 						break;
@@ -202,7 +205,7 @@ class JTranscBuild(
 				}
 				val className = program.readClassToGenerate()
 
-				for (plugin in plugins) plugin.onAfterClassDiscovered(className, program)
+				plugins.onAfterClassDiscovered(className, program)
 
 				val time = measureTime {
 					try {
@@ -258,7 +261,6 @@ class JTranscBuild(
 		genericSignature = methodType.mangle(),
 		defaultTag = null,
 		bodyRef = bodyRef,
-		modifiers = AstModifiers.withFlags(AstModifiers.ACC_NATIVE, if (isStatic) AstModifiers.ACC_STATIC else 0).withVisibility(visibility),
-		types = types
+		modifiers = AstModifiers.withFlags(AstModifiers.ACC_NATIVE, if (isStatic) AstModifiers.ACC_STATIC else 0).withVisibility(visibility)
 	)
 }

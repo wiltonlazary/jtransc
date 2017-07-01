@@ -26,7 +26,8 @@ import java.lang.reflect.Field;
 
 @SuppressWarnings({"WeakerAccess", "unused"})
 @HaxeAddFilesTemplate(base = "hx", value = {
-	"hx/N.hx", "hx/Float32.hx", "hx/Float64.hx",
+	"hx/MyStringBuf.hx",
+	"hx/N.hx", "hx/NE.hx", "hx/Float32.hx", "hx/Float64.hx",
 	"hx/JA_0.hx", "hx/JA_B.hx", "hx/JA_C.hx", "hx/JA_D.hx", "hx/JA_F.hx", "hx/JA_I.hx", "hx/JA_J.hx", "hx/JA_L.hx", "hx/JA_S.hx", "hx/JA_Z.hx",
 	"hx/HaxePolyfills.hx", "hx/HaxeDynamicLoad.hx", "hx/HaxeIO.hx", "hx/HaxeNativeWrapper.hx",
 })
@@ -38,10 +39,16 @@ import java.lang.reflect.Field;
 @HaxeAddSubtarget(name = "cs", cmdSwitch = "-cs", singleFile = true, interpreter = "", extension = "exe")
 @HaxeAddSubtarget(name = "java", cmdSwitch = "-java", singleFile = true, interpreter = "java -jar", extension = "jar")
 @HaxeAddSubtarget(name = "python", cmdSwitch = "-python", singleFile = true, interpreter = "python", extension = "py")
-@JTranscAddFile(target = "js", priority = -1, process = true, prependAppend = "js/Runtime.js")
+@JTranscAddFile(target = "js", priority = -1, process = true, prependAppend = "js/Base.js")
 @JTranscAddFile(target = "d", priority = -1, process = true, prependAppend = "d/Base.d")
 @JTranscAddFile(target = "cs", priority = -1, process = true, prependAppend = "cs/Base.cs")
+@JTranscAddFile(target = "dart", priority = -1, process = true, prependAppend = "dart/Base.dart")
+@JTranscAddFile(target = "dart", priority = -1, process = true, src = "dart/pubspec.yaml", dst = "pubspec.yaml")
 @JTranscAddFile(target = "php", priority = -1, process = true, prependAppend = "php/Base.php")
+@JTranscAddFile(target = "cpp", priority = -1, process = true, src = "cpp/GC_portable.cpp", dst = "GC_portable.cpp")
+@JTranscAddFile(target = "cpp", priority = -1, process = true, src = "cpp/GC_boehm.cpp", dst = "GC_boehm.cpp")
+@JTranscAddFile(target = "cpp", priority = -1, process = true, src = "cpp/CMakeLists.txt", dst = "CMakeLists.txt")
+@JTranscAddFile(target = "cpp", priority = -1, process = true, src = "cpp/combined_jni.h", dst = "jni.h")
 @JTranscAddFile(target = "as3", priority = -1, process = true, src = "as3/_project.as3proj", dst = "_project.as3proj")
 @JTranscAddFile(target = "as3", priority = -1, process = true, src = "as3/N.as", dst = "N.as")
 @JTranscAddFile(target = "as3", priority = -1, process = true, src = "as3/Main.as", dst = "Main.as")
@@ -60,10 +67,7 @@ import java.lang.reflect.Field;
 @JTranscAddFile(target = "as3", priority = -1, process = true, src = "as3/DivModResult.as", dst = "DivModResult.as")
 @JTranscAddFile(target = "as3", priority = -1, process = true, src = "as3/WrappedThrowable.as", dst = "WrappedThrowable.as")
 @JTranscAddFile(target = "as3", priority = -1, process = true, src = "as3/Main.xml", dst = "Main.xml")
-//@JTranscAddLibraries(target = "cpp", value = {"gc"})
-@JTranscAddMembers(target = "d", value = {
-	"core.sync.mutex.Mutex __d_mutex = null;",
-})
+@JTranscAddMembers(target = "d", value = "core.sync.mutex.Mutex __d_mutex = null;")
 public class Object {
 	@JTranscInvisible
 	public int $$id;
@@ -117,13 +121,24 @@ public class Object {
 		return getClass().getName() + "@" + Integer.toHexString(this.hashCode());
 	}
 
+	private static final long SAMPLING_STEP = 50;
+	private long waitTimeout;
 	public final void notify() {
+		waitTimeout = 0;
 	}
 
 	public final void notifyAll() {
+		waitTimeout = 0;
 	}
 
 	public final void wait(long timeout) throws InterruptedException {
+		if (timeout < 0)
+			throw new IllegalArgumentException("timeout is negative");
+		waitTimeout = timeout == 0 ? Long.MAX_VALUE : timeout;
+		while (waitTimeout > 0){
+			waitTimeout -= SAMPLING_STEP;
+			Thread.sleep(SAMPLING_STEP);
+		}
 	}
 
 	public final void wait(long timeout, int nanos) throws InterruptedException {

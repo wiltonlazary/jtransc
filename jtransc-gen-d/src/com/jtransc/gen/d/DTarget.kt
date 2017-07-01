@@ -14,6 +14,7 @@ import com.jtransc.injector.Injector
 import com.jtransc.injector.Singleton
 import com.jtransc.io.ProcessResult2
 import com.jtransc.text.Indenter
+import com.jtransc.text.Indenter.Companion
 import com.jtransc.text.escape
 import com.jtransc.text.quote
 import com.jtransc.vfs.*
@@ -61,7 +62,7 @@ class DGenerator(injector: Injector) : CommonGenerator(injector) {
 	override val methodFeatures = setOf(SwitchFeature::class.java, GotosFeature::class.java)
 	override val methodFeaturesWithTraps = setOf(SwitchFeature::class.java)
 	override val stringPoolType: StringPool.Type = StringPool.Type.GLOBAL
-	override val floatHasFPrefix: Boolean = true
+	override val floatHasFSuffix: Boolean = true
 
 	override val keywords = setOf(
 		"abstract", "alias", "align", "asm", "assert", "auto",
@@ -94,7 +95,7 @@ class DGenerator(injector: Injector) : CommonGenerator(injector) {
 	override val defaultGenStmSwitchHasBreaks = true
 
 	override fun genCompilerCommand(programFile: File, debug: Boolean, libs: List<String>): List<String> {
-		return DCompiler.genCommand(programFile, debug, libs)
+		return DCompiler.genCommand(programFile, debug, libs, extraVars)
 	}
 
 	override fun run(redirect: Boolean): ProcessResult2 {
@@ -113,7 +114,7 @@ class DGenerator(injector: Injector) : CommonGenerator(injector) {
 		println(output)
 	}
 
-	override fun genField(field: AstField): Indenter = Indenter.gen {
+	override fun genField(field: AstField): Indenter = Indenter {
 		var targetType = field.type.targetName
 		//if (field.modifiers.isVolatile) targetType = "shared($targetType)"
 		if (field.isStatic) targetType = "__gshared $targetType"
@@ -125,7 +126,7 @@ class DGenerator(injector: Injector) : CommonGenerator(injector) {
 		line("$targetType ${field.targetName} = ${field.type.getNull().escapedConstant};")
 	}
 
-	override fun genSingleFileClasses(output: SyncVfsFile): Indenter = Indenter.gen {
+	override fun genSingleFileClasses(output: SyncVfsFile): Indenter = Indenter {
 		val StringFqName = buildTemplateClass("java.lang.String".fqname)
 		val classesStr = super.genSingleFileClasses(output)
 		line(classesStr)
@@ -155,7 +156,7 @@ class DGenerator(injector: Injector) : CommonGenerator(injector) {
 
 	fun String?.dquote(): String = if (this != null) "\"${this.escape()}\"w" else "null"
 
-	override fun genClassBodyMethods(clazz: AstClass, kind: MemberTypes): Indenter = Indenter.gen {
+	override fun genClassBodyMethods(clazz: AstClass, kind: MemberTypes): Indenter = Indenter {
 		val directMethods = clazz.methods
 		val interfaceMethods = clazz.allDirectInterfaces.flatMap { it.methods }
 		val actualMethods = (if (clazz.isInterface) directMethods else directMethods + interfaceMethods).filter { !it.isStatic }
@@ -169,6 +170,15 @@ class DGenerator(injector: Injector) : CommonGenerator(injector) {
 			}
 			line(genMethod(clazz, rm, !clazz.isInterface))
 		}
+	}
+
+	override fun genMethodDeclModifiers(method: AstMethod): String {
+		//if (method.isInstanceInit) {
+		//	//return "pragma(inline, true)" + super.genMethodDeclModifiers(method)
+		//	return "pragma(inline) final " + super.genMethodDeclModifiers(method)
+		//} else {
+			return super.genMethodDeclModifiers(method)
+		//}
 	}
 
 	override fun genClassDecl(clazz: AstClass, kind: MemberTypes): String {
@@ -200,12 +210,24 @@ class DGenerator(injector: Injector) : CommonGenerator(injector) {
 
 	override val FqName.targetSimpleName: String get() = this.targetName
 
-	override fun N_c(str: String, from: AstType, to: AstType) = "(cast(${to.targetName})($str))"
+	override fun N_c(str: String, from: AstType, to: AstType):String {
+		//if (str == "this") return "this"
+		//if (to is AstType.REF && to.fqname == "java.lang.Object" && from is AstType.Reference) return str
+
+		if (from is AstType.REF && to is AstType.REF) {
+			val fromClass = program[from]!!
+			val toClass = program[to]!!
+			if (toClass in fromClass.ancestors) return str
+			if (toClass in fromClass.allInterfacesInAncestors) return str
+		}
+
+		return "(cast(${to.targetName})($str))"
+	}
 
 	override fun genExprArrayLength(e: AstExpr.ARRAY_LENGTH): String = "(cast($BaseArrayType)${e.array.genNotNull()}).length"
-	override fun genStmThrow(stm: AstStm.THROW) = Indenter("throw new WrappedThrowable(${stm.value.genExpr()});")
+	override fun genStmThrow(stm: AstStm.THROW, last: Boolean) = Indenter("throw new WrappedThrowable(${stm.exception.genExpr()});")
 
-	override fun genSIMethod(clazz: AstClass): Indenter = Indenter.gen {
+	override fun genSIMethod(clazz: AstClass): Indenter = Indenter {
 		if (clazz.isJavaLangObject) {
 			line("override public string toString()") {
 				line("return to!string(N.istr(" + buildMethod(clazz.getMethodWithoutOverrides("toString")!!, static = false) + "()));")
@@ -214,8 +236,8 @@ class DGenerator(injector: Injector) : CommonGenerator(injector) {
 
 		if (!clazz.isInterface) {
 			if (clazz.isJavaLangObject) {
-				line("public int __D__CLASS_ID;")
-				line("this(int CLASS_ID = ${clazz.classId}) { this.__D__CLASS_ID = CLASS_ID; }")
+				line("public int __JT__CLASS_ID;")
+				line("this(int CLASS_ID = ${clazz.classId}) { this.__JT__CLASS_ID = CLASS_ID; }")
 			} else {
 				line("this(int CLASS_ID = ${clazz.classId}) { super(CLASS_ID); }")
 			}
@@ -243,8 +265,8 @@ class DGenerator(injector: Injector) : CommonGenerator(injector) {
 	override fun N_i2f(str: String) = "(cast(float)($str))"
 	override fun N_i2d(str: String) = "(cast(double)($str))"
 
-	override fun N_l2f(str: String) = "(cast(float)($str))"
-	override fun N_l2d(str: String) = "(cast(double)($str))"
+	override fun N_j2f(str: String) = "(cast(float)($str))"
+	override fun N_j2d(str: String) = "(cast(double)($str))"
 
 	override fun N_idiv(l: String, r: String): String = "N.idiv($l, $r)"
 	override fun N_irem(l: String, r: String): String = "N.irem($l, $r)"
@@ -254,7 +276,7 @@ class DGenerator(injector: Injector) : CommonGenerator(injector) {
 		else -> "(cast(long)(${value}L))"
 	}
 
-	override fun genMissingBody(method: AstMethod): Indenter = Indenter.gen {
+	override fun genMissingBody(method: AstMethod): Indenter = Indenter {
 		val message = "Missing body ${method.containingClass.name}.${method.name}${method.desc}"
 		line("throw new Throwable(${message.quote()});")
 	}
@@ -262,12 +284,12 @@ class DGenerator(injector: Injector) : CommonGenerator(injector) {
 	//override val MethodRef.targetNameBase: String get() = "${this.ref.name}${this.ref.desc}"
 	//override val MethodRef.targetNameBase: String get() = "${this.ref.name}"
 
-	override fun genStmRawTry(trap: AstTrap): Indenter = Indenter.gen {
+	override fun genStmRawTry(trap: AstTrap): Indenter = Indenter {
 		//line("try {")
 		//_indent()
 	}
 
-	override fun genStmRawCatch(trap: AstTrap): Indenter = Indenter.gen {
+	override fun genStmRawCatch(trap: AstTrap): Indenter = Indenter {
 		//_unindent()
 		//line("} catch (Throwable e) {")
 		//indent {
@@ -300,18 +322,20 @@ class DGenerator(injector: Injector) : CommonGenerator(injector) {
 		}
 	}
 
-	override fun escapedConstant(v: Any?): String = when (v) {
+	override fun escapedConstant(v: Any?, place: ConstantPlace): String = when (v) {
 		is Double -> {
+			//val isVerySmall = (v in 0.0..4.940656e-324)
+			@Suppress("ConvertTwoComparisonsToRangeCheck")
 			val isVerySmall = (v >= 0.0 && v <= 4.940656e-324)
 			val representable = !isVerySmall
 			if (representable) {
-				super.escapedConstant(v)
+				super.escapedConstant(v, place)
 			} else {
 				"N.longBitsToDouble(cast(long)0x" + java.lang.Long.toHexString(java.lang.Double.doubleToRawLongBits(v)) + "UL)"
 			}
 			//"N.longBitsToDouble(" + java.lang.Double.doubleToRawLongBits(v) + "L)"
 		}
-		else -> super.escapedConstant(v)
+		else -> super.escapedConstant(v, place)
 	}
 
 	override fun genStmMonitorEnter(stm: AstStm.MONITOR_ENTER) = indent {
@@ -326,4 +350,9 @@ class DGenerator(injector: Injector) : CommonGenerator(injector) {
 	override fun N_AGET_T(arrayType: AstType.ARRAY, elementType: AstType, array: String, index: String) = "$array.data[$index]"
 	override fun N_ASET_T(arrayType: AstType.ARRAY, elementType: AstType, array: String, index: String, value: String): String = "$array.data[$index] = $value;"
 
+	override fun genExprCaughtException(e: AstExpr.CAUGHT_EXCEPTION): String = "cast(${e.type.targetName})J__exception__"
+
+	override fun genExprCastChecked(e: String, from: AstType.Reference, to: AstType.Reference): String {
+		return "checkCast!(${to.targetNameRef})($e)"
+	}
 }

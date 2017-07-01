@@ -1,12 +1,15 @@
 package com.jtransc.io;
 
+import com.jtransc.JTranscSystem;
 import com.jtransc.annotation.*;
 import com.jtransc.annotation.haxe.HaxeAddMembers;
 import com.jtransc.annotation.haxe.HaxeMethodBody;
 import com.jtransc.annotation.haxe.HaxeMethodBodyList;
 
+import java.io.File;
 import java.io.FileNotFoundException;
 import java.io.IOException;
+import java.io.RandomAccessFile;
 
 @JTranscAddFile(target = "js", priority = 0, process = true, prepend = "js/io.js")
 public class JTranscSyncIO {
@@ -50,9 +53,11 @@ public class JTranscSyncIO {
 			}),
 			@JTranscMethodBody(target = "d", value = "return std.file.getSize(N.istr2(p0));"),
 			@JTranscMethodBody(target = "cs", value = "return new System.IO.FileInfo(N.istr(p0)).Length;"),
+			@JTranscMethodBody(target = "dart", value = "return N.lnew(Math.max(0, FileStat.statSync(N.istr(p0)).size));"),
 		})
 		public long getLength(String file) {
-			return 0L;
+			checkNotJTransc();
+			return new File(file).length();
 		}
 
 		@Override
@@ -60,9 +65,11 @@ public class JTranscSyncIO {
 		@JTranscMethodBodyList({
 			@JTranscMethodBody(target = "js", value = "return IO.remove(N.istr(p0));"),
 			@JTranscMethodBody(target = "d", value = "try { std.file.remove(N.istr2(p0)); return true; } catch (Throwable t) { return false; }"),
+			@JTranscMethodBody(target = "dart", value = "new File(N.istr(p0)).deleteSync();"),
 		})
 		public boolean delete(String file) {
-			return false;
+			checkNotJTransc();
+			return new File(file).delete();
 		}
 
 		@Override
@@ -103,10 +110,28 @@ public class JTranscSyncIO {
 				"} catch (System.IO.IOException) {",
 				"}",
 				"return res;",
-			})
+			}),
+			@JTranscMethodBody(target = "dart", value = {
+				"var res = 0;",
+				"try {",
+				"	var path = N.istr(p0);",
+				"	var stat = FileStat.statSync(path);",
+				"	var fileExists = new File(path).existsSync();",
+				"	var dirExists = new Directory(path).existsSync();",
+				"	if (fileExists || dirExists) { res |= 1; res |= dirExists ? 4 : 2; }",
+				"} catch (e) {",
+				"}",
+				"return res;",
+			}),
 		})
 		public int getBooleanAttributes(String file) {
-			return 0;
+			checkNotJTransc();
+			File f = new File(file);
+			int res = 0;
+			if (f.exists()) res |= 1;
+			if (f.isDirectory()) res |= 2;
+			if (f.isFile()) res |= 4;
+			return res;
 		}
 
 		@Override
@@ -132,8 +157,15 @@ public class JTranscSyncIO {
 			@JTranscMethodBody(target = "cs", value = {
 				"var path = N.istr(p0); return System.IO.File.Exists(path) || System.IO.Directory.Exists(path);",
 			}),
+			@JTranscMethodBody(target = "dart", value = "return new File(N.istr(p0)).existsSync() || new Directory(N.istr(p0)).existsSync();"),
 		})
 		public boolean checkAccess(String file, int access) {
+			checkNotJTransc();
+			boolean result = true;
+			File f = new File(file);
+			result &= (access & 4) == 0 || f.canRead();
+			result &= (access & 2) == 0 || f.canWrite();
+			result &= (access & 1) == 0 || f.canExecute();
 			return false;
 		}
 
@@ -154,9 +186,11 @@ public class JTranscSyncIO {
 				"	return false;",
 				"}",
 			}),
+			@JTranscMethodBody(target = "dart", value = "try { new Directory(N.istr(p0)).createSync(); return true; } catch (e) { return false; }"),
 		})
 		public boolean createDirectory(String file) {
-			return false;
+			checkNotJTransc();
+			return new File(file).mkdir();
 		}
 
 		@Override
@@ -178,9 +212,11 @@ public class JTranscSyncIO {
 				"	return false;",
 				"}",
 			}),
+			@JTranscMethodBody(target = "dart", value = "new File(N.istr(p0)).renameSync(N.istr(p1));")
 		})
 		public boolean rename(String fileOld, String fileNew) {
-			return false;
+			checkNotJTransc();
+			return new File(fileOld).renameTo(new File(fileNew));
 		}
 
 		@Override
@@ -214,9 +250,15 @@ public class JTranscSyncIO {
 				"	return null;",
 				"}",
 			}),
+			@JTranscMethodBody(target = "dart", value = {
+				"var dir = new Directory(N.istr(p0));",
+				"var files = dir.listSync(recursive: false, followLinks: true).map((entry) => { return entry.path; });",
+				"return N.strArray(files);",
+			}),
 		})
 		public String[] list(String file) {
-			return new String[] {};
+			checkNotJTransc();
+			return new File(file).list();
 		}
 
 		@Override
@@ -229,8 +271,10 @@ public class JTranscSyncIO {
 			@JTranscMethodBody(target = "js", value = "return N.str(IO.getCwd());"),
 			@JTranscMethodBody(target = "d", value = "return N.str(std.file.getcwd());"),
 			@JTranscMethodBody(target = "cs", value = "return N.str(System.IO.Directory.GetCurrentDirectory());"),
+			@JTranscMethodBody(target = "dart", value = "return N.str(Directory.current.path);"),
 		})
 		public String getCwd() {
+			//return new File(".").getAbsolutePath();
 			return cwd;
 		}
 
@@ -245,6 +289,7 @@ public class JTranscSyncIO {
 		@JTranscMethodBodyList({
 			@JTranscMethodBody(target = "d", value = "std.file.chdir(N.istr(p0));"),
 			@JTranscMethodBody(target = "cs", value = "System.IO.Directory.SetCurrentDirectory(N.istr(p0));"),
+			@JTranscMethodBody(target = "dart", value = "Directory.current = new Directory(N.istr(p0));"),
 		})
 		public void setCwd(String path) {
 			this.cwd = path;
@@ -263,9 +308,11 @@ public class JTranscSyncIO {
 		@JTranscAddMembers(target = "cpp", value = "FILE* file;"),
 		@JTranscAddMembers(target = "d", value = "std.stdio.File file;"),
 		@JTranscAddMembers(target = "cs", value = "System.IO.FileStream file;"),
+		@JTranscAddMembers(target = "dart", value = "RandomAccessFile file;"),
 	})
 	static private class JTranscIOSyncFile extends ImplStream {
 		int mode;
+		private RandomAccessFile raf;
 
 		public JTranscIOSyncFile() {
 			init();
@@ -273,13 +320,8 @@ public class JTranscSyncIO {
 
 		@JTranscMethodBodyList({
 			@JTranscMethodBody(target = "js", value = "this._stream = new IO.Stream();"),
-			@JTranscMethodBody(target = "cpp", value = {
-				//"printf(\"JTranscIOSyncFile<init>\\n\");",
-				"this->file = NULL;"
-			}),
-			/*@JTranscMethodBody(target = "cpp", value = {
-				"this.file = null;"
-			}),*/
+			@JTranscMethodBody(target = "cpp", value = "this->file = NULL;"),
+			@JTranscMethodBody(target = "dart", value = "this.file = null;"),
 		})
 		private void init() {
 		}
@@ -370,9 +412,30 @@ public class JTranscSyncIO {
 				"	return false;",
 				"}",
 			}),
+			@JTranscMethodBody(target = "dart", value = {
+				"try {",
+				"	var readOnly = (p1 & 2) == 0;",
+				"	var path = N.istr(p0);",
+				"   var mode = readOnly ? FileMode.READ : FileMode.WRITE;",
+				"   var file = new File(path);",
+				"	this.file = file.openSync(mode: mode);",
+				//"	writefln(\"Opened: %s in mode %s\", name, mode);",
+				"	return true;",
+				"} catch (Exception) {",
+				"	return false;",
+				"}",
+			}),
 		})
 		private boolean _open(String name, int mode) {
-			return false;
+			checkNotJTransc();
+			boolean readOnly = (mode & 2) == 0;
+			String smode = readOnly ? "r" : "rw";
+			try {
+				this.raf = new RandomAccessFile(name, smode);
+				return true;
+			} catch (FileNotFoundException e) {
+				return false;
+			}
 		}
 
 		@HaxeMethodBody("_stream.syncioClose();")
@@ -381,8 +444,11 @@ public class JTranscSyncIO {
 			@JTranscMethodBody(target = "cpp", value = "if (this->file != NULL) { ::fclose(this->file); } this->file = NULL;"),
 			@JTranscMethodBody(target = "d", value = "this.file.close();"),
 			@JTranscMethodBody(target = "cs", value = "this.file.Close();"),
+			@JTranscMethodBody(target = "dart", value = "this.file.closeSync();"),
 		})
 		private void _close() throws IOException {
+			checkNotJTransc();
+			if (this.raf != null) this.raf.close();
 		}
 
 		@HaxeMethodBody("return _stream.syncioReadBytes(p0, p1, p2);")
@@ -391,9 +457,15 @@ public class JTranscSyncIO {
 			@JTranscMethodBody(target = "cpp", value = "return (this->file != NULL) ? ::fread(GET_OBJECT(JA_B, p0)->getOffsetPtr(p1), 1, p2, this->file) : (-1);"),
 			@JTranscMethodBody(target = "d", value = "return cast(int)this.file.rawRead(p0.data[p1..p1 + p2]).length;"),
 			@JTranscMethodBody(target = "cs", value = "return this.file.Read((byte[])(Array)p0.data, p1, p2);"),
+			@JTranscMethodBody(target = "dart", value = "return this.file.readIntoSync(p0.data, p1, p1 + p2);"),
 		})
 		private int _read(byte b[], int off, int len) {
-			return -1;
+			checkNotJTransc();
+			try {
+				return this.raf.read(b, off, len);
+			} catch (IOException e) {
+				throw new RuntimeException(e);
+			}
 		}
 
 		@HaxeMethodBody("return _stream.syncioWriteBytes(p0, p1, p2);")
@@ -402,9 +474,16 @@ public class JTranscSyncIO {
 			@JTranscMethodBody(target = "cpp", value = "return (this->file != NULL) ? ::fwrite(GET_OBJECT(JA_B, p0)->getOffsetPtr(p1), 1, p2, this->file) : (-1);"),
 			@JTranscMethodBody(target = "d", value = "this.file.rawWrite(p0.data[p1..p1 + p2]); return p2;"),
 			@JTranscMethodBody(target = "cs", value = "this.file.Write((byte[])(Array)p0.data, p1, p2); return p2;"),
+			@JTranscMethodBody(target = "dart", value = "this.file.writeFromSync(p0.data, p1, p1 + p2); return p2;"),
 		})
 		private int _write(byte b[], int off, int len) {
-			return -1;
+			checkNotJTransc();
+			try {
+				this.raf.write(b, off, len);
+			} catch (IOException e) {
+				throw new RuntimeException(e);
+			}
+			return len;
 		}
 
 		@HaxeMethodBody("return _stream.syncioPosition();")
@@ -413,9 +492,15 @@ public class JTranscSyncIO {
 			@JTranscMethodBody(target = "cpp", value = "return (this->file != NULL) ? ::ftell(this->file) : 0;"),
 			@JTranscMethodBody(target = "d", value = "return this.file.tell;"),
 			@JTranscMethodBody(target = "cs", value = "return this.file.Position;"),
+			@JTranscMethodBody(target = "dart", value = "return N.lnew(this.file.positionSync());"),
 		})
 		private long _getPosition() {
-			return 0L;
+			checkNotJTransc();
+			try {
+				return this.raf.getFilePointer();
+			} catch (IOException e) {
+				throw new RuntimeException(e);
+			}
 		}
 
 		@HaxeMethodBody("_stream.syncioSetPosition(p0);")
@@ -424,9 +509,15 @@ public class JTranscSyncIO {
 			@JTranscMethodBody(target = "cpp", value = "if (this->file != NULL) ::fseek(this->file, p0, SEEK_SET);"),
 			@JTranscMethodBody(target = "d", value = "this.file.seek(p0);"),
 			@JTranscMethodBody(target = "cs", value = "this.file.Position = p0;"),
+			@JTranscMethodBody(target = "dart", value = "this.file.setPositionSync(p0.toInt());"),
 		})
 		private void _setPosition(long pos) {
-
+			checkNotJTransc();
+			try {
+				this.raf.seek(pos);
+			} catch (IOException e) {
+				throw new RuntimeException(e);
+			}
 		}
 
 		@HaxeMethodBody("return _stream.syncioLength();")
@@ -437,19 +528,31 @@ public class JTranscSyncIO {
 			}),
 			@JTranscMethodBody(target = "d", value = "return this.file.size;"),
 			@JTranscMethodBody(target = "cs", value = "return this.file.Length;"),
+			@JTranscMethodBody(target = "dart", value = "return N.lnew(this.file.lengthSync());"),
 		})
 		private long _getLength() {
-			return 0L;
+			checkNotJTransc();
+			try {
+				return this.raf.length();
+			} catch (IOException e) {
+				throw new RuntimeException(e);
+			}
 		}
 
 		@HaxeMethodBody("_stream.syncioSetLength(p0);")
 		@JTranscMethodBodyList({
 			@JTranscMethodBody(target = "js", value = "this._stream.setLength(N.ltoFloat(p0));"),
 			//@JTranscMethodBody(target = "cpp", value = "if (this->file != NULL) ::ftruncate(fileno(this->file), p0);")
-			@JTranscMethodBody(target = "cs", value = "this.file.Length = p0;"),
+			@JTranscMethodBody(target = "cs", value = "this.file.SetLength(p0);"),
+			@JTranscMethodBody(target = "dart", value = "this.file.truncateSync(p0.toInt());"),
 		})
 		private void _setLength(long newLength) {
-			throw new RuntimeException("Not implemented");
+			checkNotJTransc();
+			try {
+				this.raf.setLength(newLength);
+			} catch (IOException e) {
+				throw new RuntimeException(e);
+			}
 		}
 	}
 
@@ -670,5 +773,9 @@ public class JTranscSyncIO {
 			read(out, 0, count);
 			return out;
 		}
+	}
+
+	static void checkNotJTransc() {
+		if (JTranscSystem.isJTransc()) throw new RuntimeException("Operation not implemented in this target");
 	}
 }

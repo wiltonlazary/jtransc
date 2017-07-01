@@ -14,28 +14,48 @@
  * limitations under the License.
  */
 
+import big.BigTest
 import big.HelloWorldTest
 import com.jtransc.gen.haxe.HaxeTarget
 import issues.Issue103
+import issues.Issue135
 import issues.Issue94Enum
+import issues.issue130.Issue130
+import issues.issue136.Issue136
+import javatest.haxe.HaxeStringBuilderTestIssue138
 import jtransc.bug.JTranscBug110
+import jtransc.bug.JTranscBug127
 import jtransc.jtransc.nativ.JTranscHaxeNativeMixedTest
 import jtransc.micro.MicroHelloWorld
 import org.junit.Ignore
 import org.junit.Test
 
-class HaxeTest : Base() {
-	@Test fun testMicroHelloWorld() = testClass<MicroHelloWorld>(minimize = false, target = HaxeTarget(), lang = "js", log = null, treeShaking = true)
+class HaxeTest : _Base() {
+	override val DEFAULT_TARGET = HaxeTarget()
 
-	@Test fun testHelloWorldHaxeJsTreeShaking() = testClass<HelloWorldTest>(minimize = false, target = HaxeTarget(), lang = "js", log = null, treeShaking = true)
-	@Test fun testHelloWorldHaxeJs() = testClass<HelloWorldTest>(minimize = false, target = HaxeTarget(), lang = "js", log = null, treeShaking = false)
+	@Test fun testMicroHelloWorld() = testClass(Params(clazz = MicroHelloWorld::class.java, minimize = false, lang = "js", log = null, treeShaking = true))
 
-	@Test fun testEnumBugIssue94() = testClass<Issue94Enum>(minimize = false, target = HaxeTarget(), log = false, treeShaking = true)
-	@Test fun testBigSwitchIssue103() = testClass<Issue103>(minimize = false, target = HaxeTarget(), lang = "js", log = false, treeShaking = true)
+	@Test fun testHelloWorldHaxeJsTreeShaking() = testClass(Params(clazz = HelloWorldTest::class.java, minimize = false, lang = "js", log = null, treeShaking = true))
+	@Test fun testHelloWorldHaxeJs() = testClass(Params(clazz = HelloWorldTest::class.java, minimize = false, lang = "js", log = null, treeShaking = false))
 
-	@Test fun testJTranscBug110() = testClass<JTranscBug110>(minimize = false, target = HaxeTarget(), lang = "js", log = false, treeShaking = true)
+	@Test fun testEnumBugIssue94() = testClass(Params(clazz = Issue94Enum::class.java, minimize = false, log = false, treeShaking = true))
+	@Test fun testBigSwitchIssue103() = testClass(Params(clazz = Issue103::class.java, minimize = false, lang = "js", log = false, treeShaking = true))
 
-	@Test fun haxeNativeCallTest() = testNativeClass<JTranscHaxeNativeMixedTest>("""
+	@Test fun testJTranscBug110() = testClass(Params(clazz = JTranscBug110::class.java, minimize = false, lang = "js", log = false, treeShaking = true))
+
+	@Ignore("Already included in BigTest")
+	@Test fun testDescentIssue130() = testClass(Params(clazz = Issue130::class.java, minimize = false, lang = "js", log = false, treeShaking = true))
+
+	@Test fun testGetGenericType() = testClass(Params(clazz = Issue136::class.java, minimize = false, lang = "js", log = false, treeShaking = true))
+
+	@Test fun testBig() = testClass(Params(clazz = BigTest::class.java, minimize = false, lang = "js", log = null))
+
+	@Test fun testBigMinimized() = testClass(Params(clazz = BigTest::class.java, minimize = true, lang = "js", log = null))
+
+	@Ignore
+	@Test fun testBigCpp() = testClass(Params(clazz = BigTest::class.java, minimize = false, lang = "cpp", log = null, debug = true))
+
+	@Test fun haxeNativeCallTest() = testNativeClass("""
 		true
 		true
 		false
@@ -68,9 +88,17 @@ class HaxeTest : Base() {
 		main__Ljava_lang_String__V
 		_jt___hello
 		JTranscReinterpretArrays:
-		bytes:8 : [0, 0, 0, 0, 0, 0, 0, 0]
-		floats:2 : [0.0, 0.0]
-		bytes:8 : [0, 0, -128, 63, 0, 0, -128, -65]
-		floats:2 : [1.0, -1.0]
-	""", target = HaxeTarget(), minimize = false)
+	""", Params(clazz = JTranscHaxeNativeMixedTest::class.java, minimize = false))
+
+	@Ignore
+	@Test fun testJTranscBug127() = testClass(Params(clazz = JTranscBug127::class.java, minimize = false, log = false, lang = "js", debug = true))
+
+	// WORKS
+	//@Ignore
+	//@Test fun testHaxeStringBuilderTestIssue138() = testClass(Params(clazz = HaxeStringBuilderTestIssue138::class.java, minimize = false, log = false, lang = "js", debug = true))
+
+	// FAILS
+	@Ignore
+	@Test fun testHaxeStringBuilderTestIssue138() = testClass(Params(clazz = HaxeStringBuilderTestIssue138::class.java, minimize = false, log = false, lang = "cpp", debug = true))
+
 }

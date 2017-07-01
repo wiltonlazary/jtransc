@@ -1,5 +1,6 @@
 package com.jtransc.io
 
+import com.jtransc.error.invalidOp
 import java.io.ByteArrayOutputStream
 import java.io.InputStream
 import java.io.OutputStream
@@ -62,17 +63,16 @@ fun InputStream.readAvailableChunk(): ByteArray {
 	if (this.available() <= 0) return EmptyByteArray
 	val out = ByteArray(this.available())
 	val readed = this.read(out, 0, out.size)
-	return out.sliceArray(0 until readed)
+	return out.copyOf(readed)
 }
 
 fun InputStream.readExactBytes(size: Int): ByteArray {
 	val out = ByteArray(size)
-	var offset = 0
-	var remaining = size
-	while (remaining > 0) {
-		val read = this.read(out, offset, remaining)
-		remaining -= read
-		offset += read
+	var pos = 0
+	while (pos < size) {
+		val read = this.read(out, pos, size - pos)
+		if (read <= 0) invalidOp("Can't read all bytes exactly")
+		pos += read
 	}
 	return out
 }

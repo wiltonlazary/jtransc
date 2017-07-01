@@ -190,6 +190,16 @@ fun AstType.asArray(): AstType.ARRAY {
 	return this
 }
 
+fun AstType.asReference(): AstType.Reference {
+	if (this !is AstType.Reference) invalidOp("$this is not AstType.Reference")
+	return this
+}
+
+fun AstType.asREF(): AstType.REF {
+	if (this !is AstType.REF) invalidOp("$this is not AstType.REF")
+	return this
+}
+
 fun ARRAY(type: AstType) = AstType.ARRAY(type)
 
 @Singleton
@@ -470,6 +480,8 @@ val FqName.ref: AstType.REF get() = AstType.REF(this)
 fun AstType.isPrimitive() = (this is AstType.Primitive)
 fun AstType.isNotPrimitive() = (this !is AstType.Primitive)
 fun AstType.isReference() = (this is AstType.Reference)
+fun AstType.isREF() = (this is AstType.REF)
+fun AstType.isArray() = (this is AstType.ARRAY)
 fun AstType.isFloating() = (this == AstType.FLOAT) || (this == AstType.DOUBLE)
 fun AstType.isLongOrDouble() = (this == AstType.LONG) || (this == AstType.DOUBLE)
 

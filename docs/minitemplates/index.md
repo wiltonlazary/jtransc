@@ -56,6 +56,8 @@ Also you can reference variables available in its current context. Inside the `f
 {% CLASS fqname.to.Class %}                   - Replaces with the fully qualified name of the class.
 {% METHOD fqname.to.Class:name:descriptor %}  - Replaces with the method name.
 {% FIELD fqname.to.Class:name:descriptor %}   - Replaces with the field name.
+{% IMETHOD fqname.to.Class:name:descriptor %}  - Replaces with '.' plus the method name (in the case of javascript can be replaced with 'name' too).
+{% IFIELD fqname.to.Class:name:descriptor %}   - Replaces with '.' plus the field name (in the case of javascript can be replaced with 'name' too).
 {% SMETHOD fqname.to.Class:name:descriptor %} - It is a shortcut for CLASS + METHOD tags for calling static methods.
 {% SFIELD fqname.to.Class:name:descriptor %}  - It is a shortcut for CLASS + FIELD tags for accessing static fields.
 {% endraw %}</pre>
@@ -72,21 +74,24 @@ static public function init() {
 private function mouseInfo() return {% SFIELD com.jtransc.media.JTranscInput:mouseInfo %};
 
 override public function onMouseUp(window:Window, x:Float, y:Float, button:Int):Void {
-	mouseInfo().{% METHOD com.jtransc.media.JTranscInput$MouseInfo:setScreenXY %}(Std.int(x), Std.int(y));
-	mouseInfo().{% FIELD com.jtransc.media.JTranscInput$MouseInfo:buttons %} &= ~(1 << button);
-	inputImpl().{% METHOD com.jtransc.media.JTranscInput$Handler:onMouseUp %}(mouseInfo());
+	mouseInfo(){% IMETHOD com.jtransc.media.JTranscInput$MouseInfo:setScreenXY %}(Std.int(x), Std.int(y));
+	mouseInfo(){% IFIELD com.jtransc.media.JTranscInput$MouseInfo:buttons %} &= ~(1 << button);
+	inputImpl(){% IMETHOD com.jtransc.media.JTranscInput$Handler:onMouseUp %}(mouseInfo());
 }
 {% endraw %}</pre>
 
 ## Available filters
 
 <pre>{% raw %}
+|length              - Evaluates to the length of a list or string
 |upper               - Uppercases the whole string
 |lower               - Lowercases the whole string
 |capitalize          - Uppercases the first character of the string and lowercases the rest
 |trim                - Strips starting and ending whitespace characters
 |join('separator')   - Joins something iterable with the specified separator
 |file_exists('file') - Evaluates to true in the case the specified file exists
+|quote               - Quotes a string "like \"this\""
+|escape              - Escapes a string (like quotes but without wrapping within "") like \"this\"
 {% endraw %}</pre>
 
 ## Available identifiers in templates
@@ -117,5 +122,12 @@ override public function onMouseUp(window:Window, x:Float, y:Float, button:Int):
 * `icon` - Path to icon file
 * `libraries` - List of target libraries to include
 * `extra` - Map<String, String> containing all the extra defined configurations
+* `JTRANSC_VERSION` - Version of JTransc eg. 0.6.0
+
+After building sources, inside for example HaxeCustomMain:
 * `entryPointFile` - File that holds the entrypoint
 * `entryPointClass` - Fully qualified name for the entry point class
+
+Specific targets can define custom template variables. To prevent them being outdated, please locate `CommonGenerator.params` field and find references:
+
+![](/minitemplates/CommonGenerator_params_references.png)

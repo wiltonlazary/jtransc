@@ -39,6 +39,8 @@ public final class Math {
 	@JTranscMethodBody(target = "d", value = "return std.math.sin(p0);")
 	@JTranscMethodBody(target = "cs", value = "return Math.Sin(p0);")
 	@JTranscMethodBody(target = "as3", value = "return Math.sin(p0);")
+	@JTranscMethodBody(target = "dart", value = "return Math.sin(p0);")
+	@JTranscMethodBody(target = "php", value = "return sin($p0);")
 	native public static double sin(double a);
 
 	@JTranscInline
@@ -48,6 +50,8 @@ public final class Math {
 	@JTranscMethodBody(target = "d", value = "return std.math.cos(p0);")
 	@JTranscMethodBody(target = "cs", value = "return Math.Cos(p0);")
 	@JTranscMethodBody(target = "as3", value = "return Math.cos(p0);")
+	@JTranscMethodBody(target = "dart", value = "return Math.cos(p0);")
+	@JTranscMethodBody(target = "php", value = "return cos($p0);")
 	native public static double cos(double a);
 
 	@JTranscInline
@@ -57,7 +61,11 @@ public final class Math {
 	@JTranscMethodBody(target = "d", value = "return std.math.tan(p0);")
 	@JTranscMethodBody(target = "cs", value = "return Math.Tan(p0);")
 	@JTranscMethodBody(target = "as3", value = "return Math.tan(p0);")
-	native public static double tan(double a);
+	@JTranscMethodBody(target = "dart", value = "return Math.tan(p0);")
+	@JTranscMethodBody(target = "php", value = "return tan($p0);")
+	public static double tan(double a) {
+		return Math.sin(a) / Math.cos(a);
+	}
 
 	@JTranscInline
 	@HaxeMethodBody("return Math.asin(p0);")
@@ -66,6 +74,8 @@ public final class Math {
 	@JTranscMethodBody(target = "d", value = "return std.math.asin(p0);")
 	@JTranscMethodBody(target = "cs", value = "return Math.Asin(p0);")
 	@JTranscMethodBody(target = "as3", value = "return Math.asin(p0);")
+	@JTranscMethodBody(target = "dart", value = "return Math.asin(p0);")
+	@JTranscMethodBody(target = "php", value = "return asin($p0);")
 	native public static double asin(double a);
 
 	@JTranscInline
@@ -75,6 +85,8 @@ public final class Math {
 	@JTranscMethodBody(target = "d", value = "return std.math.acos(p0);")
 	@JTranscMethodBody(target = "cs", value = "return Math.Acos(p0);")
 	@JTranscMethodBody(target = "as3", value = "return Math.acos(p0);")
+	@JTranscMethodBody(target = "dart", value = "return Math.acos(p0);")
+	@JTranscMethodBody(target = "php", value = "return acos($p0);")
 	native public static double acos(double a);
 
 	@JTranscInline
@@ -84,6 +96,8 @@ public final class Math {
 	@JTranscMethodBody(target = "d", value = "return std.math.atan(p0);")
 	@JTranscMethodBody(target = "cs", value = "return Math.Atan(p0);")
 	@JTranscMethodBody(target = "as3", value = "return Math.atan(p0);")
+	@JTranscMethodBody(target = "dart", value = "return Math.atan(p0);")
+	@JTranscMethodBody(target = "php", value = "return atan($p0);")
 	native public static double atan(double a);
 
 	public static double toRadians(double angdeg) {
@@ -101,7 +115,10 @@ public final class Math {
 	@JTranscMethodBody(target = "d", value = "return std.math.exp(p0);")
 	@JTranscMethodBody(target = "cs", value = "return Math.Exp(p0);")
 	@JTranscMethodBody(target = "as3", value = "return Math.exp(p0);")
-	native public static double exp(double a);
+	@JTranscMethodBody(target = "php", value = "return exp($p0);")
+	public static double exp(double a) {
+		return Math.pow(a, Math.E);
+	}
 
 	@JTranscInline
 	@HaxeMethodBody("return Math.log(p0);")
@@ -110,6 +127,8 @@ public final class Math {
 	@JTranscMethodBody(target = "d", value = "return std.math.log(p0);")
 	@JTranscMethodBody(target = "cs", value = "return Math.Log(p0);")
 	@JTranscMethodBody(target = "as3", value = "return Math.log(p0);")
+	@JTranscMethodBody(target = "dart", value = "return Math.log(p0);")
+	@JTranscMethodBody(target = "php", value = "return log($p0);")
 	native public static double log(double a);
 
 	@HaxeMethodBody("return Math.log(p0) / Math.log(10);")
@@ -117,6 +136,7 @@ public final class Math {
 	@JTranscMethodBody(target = "cpp", value = "return ::log10(p0);")
 	@JTranscMethodBody(target = "d", value = "return std.math.log10(p0);")
 	@JTranscMethodBody(target = "cs", value = "return Math.Log10(p0);")
+	@JTranscMethodBody(target = "php", value = "return log10($p0);")
 	public static double log10(double a) {
 		return log(a) / log(10.0);
 	}
@@ -128,7 +148,11 @@ public final class Math {
 	@JTranscMethodBody(target = "d", value = "return std.math.sqrt(p0);")
 	@JTranscMethodBody(target = "cs", value = "return Math.Sqrt(p0);")
 	@JTranscMethodBody(target = "as3", value = "return Math.sqrt(p0);")
-	native public static double sqrt(double a);
+	@JTranscMethodBody(target = "dart", value = "return Math.sqrt(p0);")
+	@JTranscMethodBody(target = "php", value = "return sqrt($p0);")
+	public static double sqrt(double a) {
+		return Math.pow(a, 0.5);
+	}
 
 	static public double cbrt(double x) {
 		double y = Math.pow(Math.abs(x), 1.0 / 3.0);
@@ -145,6 +169,8 @@ public final class Math {
 	@JTranscMethodBody(target = "d", value = "return std.math.ceil(p0);")
 	@JTranscMethodBody(target = "cs", value = "return Math.Ceiling(p0);")
 	@JTranscMethodBody(target = "as3", value = "return Math.ceil(p0);")
+	@JTranscMethodBody(target = "dart", value = "return (p0).ceil();")
+	@JTranscMethodBody(target = "php", value = "return ceil($p0);")
 	native public static double ceil(double a);
 
 	@JTranscInline
@@ -154,6 +180,8 @@ public final class Math {
 	@JTranscMethodBody(target = "d", value = "return std.math.floor(p0);")
 	@JTranscMethodBody(target = "cs", value = "return Math.Floor(p0);")
 	@JTranscMethodBody(target = "as3", value = "return Math.floor(p0);")
+	@JTranscMethodBody(target = "dart", value = "return (p0).floor();")
+	@JTranscMethodBody(target = "php", value = "return floor($p0);")
 	native public static double floor(double a);
 
 	//@HaxeMethodBody("return Math.rint(p0);")
@@ -170,6 +198,8 @@ public final class Math {
 	@JTranscMethodBody(target = "d", value = "return std.math.atan2(p0, p1);")
 	@JTranscMethodBody(target = "cs", value = "return Math.Atan2(p0, p1);")
 	@JTranscMethodBody(target = "as3", value = "return Math.atan2(p0, p1);")
+	@JTranscMethodBody(target = "dart", value = "return Math.atan2(p0, p1);")
+	@JTranscMethodBody(target = "php", value = "return atan2($p0, $p1);")
 	native public static double atan2(double y, double x);
 
 	@JTranscInline
@@ -179,6 +209,8 @@ public final class Math {
 	@JTranscMethodBody(target = "d", value = "return std.math.pow(p0, p1);")
 	@JTranscMethodBody(target = "cs", value = "return Math.Pow(p0, p1);")
 	@JTranscMethodBody(target = "as3", value = "return Math.pow(p0, p1);")
+	@JTranscMethodBody(target = "dart", value = "return Math.pow(p0, p1);")
+	@JTranscMethodBody(target = "php", value = "return pow($p0, $p1);")
 	native public static double pow(double a, double b);
 
 	@JTranscInline
@@ -188,6 +220,8 @@ public final class Math {
 	@JTranscMethodBody(target = "d", value = "return cast(int)std.math.round(p0);")
 	@JTranscMethodBody(target = "cs", value = "return (int)Math.Round(p0);")
 	@JTranscMethodBody(target = "as3", value = "return int(Math.round(p0));")
+	@JTranscMethodBody(target = "dart", value = "return p0.round();")
+	@JTranscMethodBody(target = "php", value = "return (int)round($p0);")
 	native public static int round(float a);
 
 	@JTranscInline
@@ -197,6 +231,8 @@ public final class Math {
 	@JTranscMethodBody(target = "d", value = "return cast(long)std.math.round(p0);")
 	@JTranscMethodBody(target = "cs", value = "return (long)Math.Round(p0);")
 	@JTranscMethodBody(target = "as3", value = "return N.lnewFloat(Math.round(p0));")
+	@JTranscMethodBody(target = "dart", value = "return p0.round();")
+	@JTranscMethodBody(target = "php", value = "return N::d2j($p0);")
 	native public static long round(double a);
 
 	@JTranscInline
@@ -204,6 +240,7 @@ public final class Math {
 	@JTranscMethodBody(target = "js", value = "return Math.random();")
 	@JTranscMethodBody(target = "d", value = "return std.random.uniform(0.0, 1.0);")
 	@JTranscMethodBody(target = "as3", value = "return Math.random();")
+	@JTranscMethodBody(target = "php", value = "return mt_rand() / mt_getrandmax();")
 	public static double random() {
 		if (random == null) random = new Random();
 		return random.nextDouble();

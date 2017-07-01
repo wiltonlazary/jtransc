@@ -14,6 +14,7 @@ import com.jtransc.injector.Singleton
 import com.jtransc.io.ProcessResult2
 import com.jtransc.lang.map
 import com.jtransc.text.Indenter
+import com.jtransc.text.Indenter.Companion
 import com.jtransc.text.quote
 import com.jtransc.vfs.*
 import java.io.File
@@ -67,7 +68,7 @@ class As3Generator(injector: Injector) : CommonGenerator(injector) {
 	override val languageRequiresDefaultInSwitch = true
 	override val defaultGenStmSwitchHasBreaks = true
 	override val allowRepeatMethodsInInterfaceChain = false
-	override val floatHasFPrefix: Boolean = false
+	override val floatHasFSuffix: Boolean = false
 
 	override val keywords = setOf(
 		"abstract", "alias", "align", "asm", "assert", "auto",
@@ -147,7 +148,7 @@ class As3Generator(injector: Injector) : CommonGenerator(injector) {
 		}
 	}
 
-	override fun genField(field: AstField): Indenter = Indenter.gen {
+	override fun genField(field: AstField): Indenter = Indenter {
 		val static = field.isStatic.map("static ", "")
 
 		line("public ${static}var ${field.targetName}: ${field.type.targetName} = ${field.type.getNull().escapedConstant};")
@@ -315,11 +316,11 @@ class As3Generator(injector: Injector) : CommonGenerator(injector) {
 	override fun N_c(str: String, from: AstType, to: AstType) = "(($str) as ${to.targetName})"
 
 	override fun genExprArrayLength(e: AstExpr.ARRAY_LENGTH): String = "(${e.array.genNotNull()} as $BaseArrayType).length"
-	override fun genStmThrow(stm: AstStm.THROW) = Indenter("throw new WrappedThrowable(${stm.value.genExpr()});")
+	override fun genStmThrow(stm: AstStm.THROW, last: Boolean) = Indenter("throw new WrappedThrowable(${stm.exception.genExpr()});")
 
-	override fun genStmLabelCore(stm: AstStm.STM_LABEL) = "${stm.label.name}:"
+	override fun genLabel(label: AstLabel) = "${label.name}:"
 
-	override fun genSIMethod(clazz: AstClass): Indenter = Indenter.gen {
+	override fun genSIMethod(clazz: AstClass): Indenter = Indenter {
 		if (clazz.isJavaLangObject) {
 			//line("override public function toString(): String") {
 			line("public function toString(): String") {
@@ -330,8 +331,8 @@ class As3Generator(injector: Injector) : CommonGenerator(injector) {
 
 		if (!clazz.isInterface) {
 			if (clazz.isJavaLangObject) {
-				line("public var __AS3__CLASS_ID: int;")
-				line("public function ${clazz.name.targetName}(CLASS_ID: int = ${clazz.classId}) { this.__AS3__CLASS_ID = CLASS_ID; }")
+				line("public var __JT__CLASS_ID: int;")
+				line("public function ${clazz.name.targetName}(CLASS_ID: int = ${clazz.classId}) { this.__JT__CLASS_ID = CLASS_ID; }")
 			} else {
 				line("public function ${clazz.name.targetName}(CLASS_ID: int = ${clazz.classId}) { super(CLASS_ID); }")
 			}
@@ -361,17 +362,15 @@ class As3Generator(injector: Injector) : CommonGenerator(injector) {
 	override fun N_i2f(str: String) = "Number($str)"
 	override fun N_i2d(str: String) = "Number($str)"
 
-	override fun N_l2f(str: String) = "Number($str)"
-	override fun N_l2d(str: String) = "Number($str)"
+	override fun N_j2f(str: String) = "Number($str)"
+	override fun N_j2d(str: String) = "Number($str)"
 
 	//override fun N_c_div(l: String, r: String) = "unchecked($l / $r)"
 
 	override fun N_idiv(l: String, r: String): String = "N.idiv($l, $r)"
 	override fun N_irem(l: String, r: String): String = "N.irem($l, $r)"
 
-	override fun N_lneg(str: String) = "N.lneg($str)"
-
-	override fun genMissingBody(method: AstMethod): Indenter = Indenter.gen {
+	override fun genMissingBody(method: AstMethod): Indenter = Indenter {
 		val message = "Missing body ${method.containingClass.name}.${method.name}${method.desc}"
 		line("throw new Error(${message.quote()});")
 	}
@@ -415,4 +414,12 @@ class As3Generator(injector: Injector) : CommonGenerator(injector) {
 	}
 
 	override fun buildStaticInit(clazzName: FqName): String? = null
+
+	override fun genExprCaughtException(e: AstExpr.CAUGHT_EXCEPTION): String = "(J__exception__ as ${e.type.targetName})"
+
+	override fun genExprCastChecked(e: String, from: AstType.Reference, to: AstType.Reference): String {
+		if (from == to) return e;
+		if (from is AstType.NULL) return e
+		return "N.CHECK_CAST($e, ${to.targetNameRef})"
+	}
 }

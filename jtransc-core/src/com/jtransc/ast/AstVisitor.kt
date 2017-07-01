@@ -4,7 +4,21 @@ import com.jtransc.error.invalidOp
 import com.jtransc.error.noImpl
 
 open class AstVisitor {
-	open fun visit(body: AstBody) {
+	open fun visit(clazz: AstClass) {
+		for (field in clazz.fields) visit(field)
+		for (method in clazz.methods) visit(method)
+	}
+
+	open fun visit(field: AstField) {
+	}
+
+	open fun visit(method: AstMethod) {
+		val body = method.body
+		if (body != null) visit(body)
+	}
+
+	open fun visit(body: AstBody?) {
+		if (body == null) return
 		visit(body.stm)
 	}
 
@@ -87,6 +101,7 @@ open class AstVisitor {
 			is AstExpr.FIELD_STATIC_ACCESS -> visit(expr)
 			is AstExpr.INSTANCE_OF -> visit(expr)
 			is AstExpr.CAST -> visit(expr)
+			is AstExpr.CHECK_CAST -> visit(expr)
 			is AstExpr.NEW -> visit(expr)
 			is AstExpr.NEW_WITH_CONSTRUCTOR -> visit(expr)
 			is AstExpr.NEW_ARRAY -> visit(expr)
@@ -196,7 +211,7 @@ open class AstVisitor {
 	}
 
 	open fun visit(stm: AstStm.THROW) {
-		visit(stm.value)
+		visit(stm.exception)
 	}
 
 	open fun visit(stm: AstStm.RETHROW) {
@@ -286,6 +301,7 @@ open class AstVisitor {
 	open fun visit(expr: AstExpr.INVOKE_DYNAMIC_METHOD) {
 		visit(expr.methodInInterfaceRef)
 		visit(expr.methodToConvertRef)
+		for (arg in expr.startArgs) visit(arg)
 	}
 
 	open fun visit(expr: AstExpr.LOCAL) {
@@ -358,6 +374,11 @@ open class AstVisitor {
 		visit(expr.type)
 	}
 
+	open fun visit(expr: AstExpr.CHECK_CAST) {
+		visit(expr.subject)
+		visit(expr.type)
+	}
+
 	open fun visit(expr: AstExpr.NEW) {
 		visit(expr.target)
 		visit(expr.type)
@@ -389,4 +410,8 @@ open class AstVisitor {
 		visit(expr.etrue)
 		visit(expr.efalse)
 	}
+}
+
+fun AstBody.visit(visitor: AstVisitor) {
+	visitor.visit(this)
 }

@@ -16,6 +16,7 @@
 
 package com.jtransc.text
 
+import com.jtransc.text.Indenter.Companion
 import java.util.*
 
 object INDENTS {
@@ -46,15 +47,9 @@ class Indenter(private val actions: ArrayList<Action> = arrayListOf<Indenter.Act
 	val noIndentEmptyLines = true
 
 	companion object {
-		fun genString(init: Indenter.() -> Unit) = gen(init).toString()
+		fun genString(init: Indenter.() -> Unit) = this(init).toString()
 
-		val EMPTY = Indenter.gen { }
-
-		inline fun gen(init: Indenter.() -> Unit): Indenter {
-			val indenter = Indenter()
-			indenter.init()
-			return indenter
-		}
+		val EMPTY = Indenter { }
 
 		inline operator fun invoke(init: Indenter.() -> Unit): Indenter {
 			val indenter = Indenter()
@@ -62,9 +57,10 @@ class Indenter(private val actions: ArrayList<Action> = arrayListOf<Indenter.Act
 			return indenter
 		}
 
-		fun single(str: String): Indenter = Indenter(arrayListOf(Action.Line(str)))
+		@Deprecated("", ReplaceWith("this(str)", "com.jtransc.text.Indenter.Companion"))
+		fun single(str: String): Indenter = this(str)
 
-		operator fun invoke(str: String): Indenter = single(str)
+		operator fun invoke(str: String): Indenter = Indenter(arrayListOf(Action.Line(str)))
 
 		fun replaceString(templateString: String, replacements: Map<String, String>): String {
 			val pattern = Regex("\\$(\\w+)")
@@ -90,6 +86,10 @@ class Indenter(private val actions: ArrayList<Action> = arrayListOf<Indenter.Act
 			indenter
 		}))
 		return this
+	}
+
+	fun lines(strs: List<String>): Indenter = this.apply {
+		for (str in strs) line(str)
 	}
 
 	inline fun line(str: String, callback: () -> Unit): Indenter {

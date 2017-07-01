@@ -8,10 +8,10 @@ import com.jtransc.ast.*
 import com.jtransc.ast.template.CommonTagHandler
 import com.jtransc.error.invalidOp
 import com.jtransc.gen.TargetName
-import com.jtransc.plugin.JTranscPlugin
+import com.jtransc.plugin.JTranscPluginGroup
 import java.util.*
 
-fun TreeShaking(program: AstProgram, target: String, trace: Boolean, plugins: List<JTranscPlugin>): AstProgram {
+fun TreeShaking(program: AstProgram, target: String, trace: Boolean, plugins: JTranscPluginGroup): AstProgram {
 	// The unshaked program should be cached, in a per class basis, since it doesn't have information about other classes.
 
 	val shaking = TreeShakingApi(program, target, trace, plugins)
@@ -33,7 +33,7 @@ class TreeShakingApi(
 	val oldprogram: AstProgram,
 	val target: String,
 	val trace: Boolean,
-	val plugins: List<JTranscPlugin>
+	val plugins: JTranscPluginGroup
 ) {
 	val program = oldprogram
 	val targetName = TargetName(target)
@@ -59,8 +59,10 @@ class TreeShakingApi(
 	}.map { it.name }.toSet()
 	// oldclazz.annotationsList.list.any { it.type.name in classesWithKeepConstructors })
 
+	val config = TRefConfig(TRefReason.TREESHAKING)
+
 	fun addTemplateReferences(template: String, currentClass: FqName, templateReason: String) {
-		val refs = GetTemplateReferences(oldprogram, template, currentClass)
+		val refs = GetTemplateReferences(oldprogram, template, currentClass, config)
 		val reason = "template $templateReason"
 		for (ref in refs) {
 			if (SHAKING_TRACE) println("TEMPLATEREF: $ref")
@@ -129,7 +131,7 @@ class TreeShakingApi(
 			val oldclazz = program[fqname]
 			val newclazz = _addMiniBasicClass(fqname)
 
-			for (plugin in plugins) plugin.onTreeShakingAddBasicClass(this, fqname, oldclazz, newclazz)
+			plugins.onTreeShakingAddBasicClass(this, fqname, oldclazz, newclazz)
 
 			for (impl in oldclazz.implementing) addBasicClass(impl, reason = "implementing $fqname")
 			if (oldclazz.extending != null) addBasicClass(oldclazz.extending, reason = "extending $fqname")
@@ -198,6 +200,10 @@ class TreeShakingApi(
 	}
 
 	fun addField(fieldRef: AstFieldRef, reason: String) {
+		_addFieldFinal(fieldRef.resolve(program).ref, reason)
+	}
+
+	private fun _addFieldFinal(fieldRef: AstFieldRef, reason: String) {
 		if (fieldRef in processed) return
 		if (SHAKING_TRACE) println("addField: $fieldRef. Reason: $reason")
 		processed += fieldRef
@@ -227,7 +233,7 @@ class TreeShakingApi(
 		)
 		newclazz.add(newfield)
 
-		for (plugin in plugins) plugin.onTreeShakingAddField(this, oldfield, newfield)
+		plugins.onTreeShakingAddField(this, oldfield, newfield)
 
 		addAnnotations(newfield.annotationsList, reason = "field $fieldRef")
 
@@ -251,6 +257,10 @@ class TreeShakingApi(
 	}
 
 	fun addMethod(methodRef: AstMethodRef, reason: String) {
+		_addMethodFinal(methodRef.resolve(program).ref, reason)
+	}
+
+	private fun _addMethodFinal(methodRef: AstMethodRef, reason: String) {
 		if (methodRef in processed) return
 		if (SHAKING_TRACE) println("methodRef: $methodRef. Reason: $reason")
 		processed += methodRef
@@ -269,8 +279,7 @@ class TreeShakingApi(
 			modifiers = oldmethod.modifiers,
 			generateBody = oldmethod.generateBody,
 			bodyRef = oldmethod.bodyRef,
-			parameterAnnotations = oldmethod.parameterAnnotations,
-			types = newprogram.types
+			parameterAnnotations = oldmethod.parameterAnnotations
 		)
 		//println("    -> ${oldmethod.dependencies.classes}")
 
@@ -278,7 +287,7 @@ class TreeShakingApi(
 
 		newclazz.add(newmethod)
 
-		for (plugin in plugins) plugin.onTreeShakingAddMethod(this, oldmethod, newmethod)
+		plugins.onTreeShakingAddMethod(this, oldmethod, newmethod)
 
 		for (ref in methodRef.type.getRefTypesFqName()) addBasicClass(ref, reason = "$methodRef")
 
@@ -293,6 +302,9 @@ class TreeShakingApi(
 		for (methodBody in newmethod.annotationsList.getBodiesForTarget(targetName)) {
 			addTemplateReferences(methodBody.value, methodRef.containingClass, "methodBody=$newmethod")
 		}
+
+		val callSite = newmethod.annotationsList.getCallSiteBodyForTarget(targetName)
+		if (callSite != null) addTemplateReferences(callSite, methodRef.containingClass, "methodBodyCallSite=$newmethod")
 
 		//if (methodRef.name == "_onKeyDownUp") {
 		//	val bodyDependencies = oldmethod.bodyDependencies

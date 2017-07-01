@@ -1,3 +1,4 @@
+apply from: '../includeCommon.gradle'
 apply from: '../include.gradle'
 
 apply plugin: "kotlin" // or apply plugin: "kotlin2js" if targeting JavaScript
@@ -7,5 +8,6 @@ targetCompatibility = 1.6
 
 dependencies {
 	compile "org.jetbrains.kotlin:kotlin-stdlib:$kotlin_version"
+	compile project(':jtransc-rt-core')
 	compile project(':jtransc-annotations')
 }

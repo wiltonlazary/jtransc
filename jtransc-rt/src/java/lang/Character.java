@@ -303,15 +303,15 @@ public final class Character implements java.io.Serializable, Comparable<Charact
 		return (char)toUpperCase((int)ch);
 	}
 
-	@HaxeMethodBody("return String.fromCharCode(p0).toLowerCase().charCodeAt(0);")
-	@JTranscMethodBody(target = "js", value = "return String.fromCharCode(p0).toLowerCase().charCodeAt(0);")
+	@HaxeMethodBody("return N.ichar(p0).toLowerCase().charCodeAt(0);")
+	@JTranscMethodBody(target = "js", value = "return N.ichar(p0).toLowerCase().charCodeAt(0);")
 	public static int toLowerCase(int codePoint) {
 		if (codePoint >= 'A' && codePoint < 'Z') return (codePoint - 'A') + 'a';
 		return codePoint;
 	}
 
-	@HaxeMethodBody("return String.fromCharCode(p0).toUpperCase().charCodeAt(0);")
-	@JTranscMethodBody(target = "js", value = "return String.fromCharCode(p0).toUpperCase().charCodeAt(0);")
+	@HaxeMethodBody("return N.ichar(p0).toUpperCase().charCodeAt(0);")
+	@JTranscMethodBody(target = "js", value = "return N.ichar(p0).toUpperCase().charCodeAt(0);")
 	public static int toUpperCase(int codePoint) {
 		if (codePoint >= 'a' && codePoint < 'z') return (codePoint - 'a') + 'A';
 		return codePoint;
@@ -464,6 +464,7 @@ public final class Character implements java.io.Serializable, Comparable<Charact
 	public static final int BYTES = SIZE / Byte.SIZE;
 
 	@HaxeMethodBody("return N.swap16(p0) & 0xFFFF;")
+	@JTranscMethodBody(target = "cpp", value = "return N::bswap16(p0);")
 	public static char reverseBytes(char ch) {
 		return (char) (((ch & 0xFF00) >> 8) | (ch << 8));
 	}

@@ -27,14 +27,14 @@ public class N {
 
 	static public function istr(s: {% CLASS java.lang.String %}): String { return (s != null) ? s._str : null; }
 
-	static public function unboxBool(v: {% CLASS java.lang.Boolean %}): Boolean { return v.{% FIELD java.lang.Boolean:value %}; }
-	static public function unboxByte(v: {% CLASS java.lang.Byte %}): int { return v.{% FIELD java.lang.Byte:value %}; }
-	static public function unboxChar(v: {% CLASS java.lang.Character %}): int { return v.{% FIELD java.lang.Character:value %}; }
-	static public function unboxShort(v: {% CLASS java.lang.Short %}): int { return v.{% FIELD java.lang.Short:value %}; }
-	static public function unboxInt(v: {% CLASS java.lang.Integer %}): int { return v.{% FIELD java.lang.Integer:value %}; }
-	static public function unboxLong(v: {% CLASS java.lang.Long %}): Int64 { return v.{% FIELD java.lang.Long:value %}; }
-	static public function unboxFloat(v: {% CLASS java.lang.Float %}): Number { return v.{% FIELD java.lang.Float:value %}; }
-	static public function unboxDouble(v: {% CLASS java.lang.Double %}): Number { return v.{% FIELD java.lang.Double:value %}; }
+	static public function unboxBool(v: {% CLASS java.lang.Boolean %}): Boolean { return v{% IFIELD java.lang.Boolean:value %}; }
+	static public function unboxByte(v: {% CLASS java.lang.Byte %}): int { return v{% IFIELD java.lang.Byte:value %}; }
+	static public function unboxChar(v: {% CLASS java.lang.Character %}): int { return v{% IFIELD java.lang.Character:value %}; }
+	static public function unboxShort(v: {% CLASS java.lang.Short %}): int { return v{% IFIELD java.lang.Short:value %}; }
+	static public function unboxInt(v: {% CLASS java.lang.Integer %}): int { return v{% IFIELD java.lang.Integer:value %}; }
+	static public function unboxLong(v: {% CLASS java.lang.Long %}): Int64 { return v{% IFIELD java.lang.Long:value %}; }
+	static public function unboxFloat(v: {% CLASS java.lang.Float %}): Number { return v{% IFIELD java.lang.Float:value %}; }
+	static public function unboxDouble(v: {% CLASS java.lang.Double %}): Number { return v{% IFIELD java.lang.Double:value %}; }
 
 	static public function boxBool(v: Boolean): {% CLASS java.lang.Boolean %} { return {% SMETHOD java.lang.Boolean:valueOf:(Z)Ljava/lang/Boolean;  %}(v); }
 	static public function boxByte(v: int): {% CLASS java.lang.Byte %}        { return {% SMETHOD java.lang.Byte:valueOf:(B)Ljava/lang/Byte;  %}(v); }
@@ -46,7 +46,7 @@ public class N {
 	static public function boxDouble(v: Number): {% CLASS java.lang.Double %} { return {% SMETHOD java.lang.Double:valueOf:(D)Ljava/lang/Double;  %}(v); }
 
 	static public function z2i(v: Boolean): int { return v ? 1 : 0; }
-	static public function l2i(v: Int64): int { return v.low; }
+	static public function j2i(v: Int64): int { return v.low; }
 	static public function i2j(v: int): Int64 { return Int64.ofInt(v); }
 
 	static public function f2j(v: Number): Int64 { return Int64.ofFloat(v); }
@@ -167,5 +167,13 @@ public class N {
 	}
 
 	static public var NaN: Number = longBitsToDouble(Int64.make(0x7FF80000, 0x00000000));
+	static public function CHECK_CAST(a: *, clazz: *): * {
+		if (a == null) return null;
+		var out: * = a as clazz;
+		if (out == null) {
+			throw new WrappedThrowable({% CONSTRUCTOR java.lang.ClassCastException:(Ljava/lang/String;)V %}(N.str("Class cast error")));
+		}
+		return out;
+	}
 }
 }

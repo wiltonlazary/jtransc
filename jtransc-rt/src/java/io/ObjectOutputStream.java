@@ -645,6 +645,10 @@ public class ObjectOutputStream extends OutputStream implements ObjectOutput, Ob
         primitiveTypes.write(buffer, offset, length);
     }
 
+	public void write(byte[] buf) throws IOException {
+		write(buf, 0, buf.length);
+	}
+
     /**
      * Writes a single byte to the target stream. Only the least significant
      * byte of the integer {@code value} is written to the stream. Blocks until
@@ -1437,12 +1441,12 @@ public class ObjectOutputStream extends OutputStream implements ObjectOutput, Ob
         if (count <= 0xffff) {
             buffer = new byte[1 + SizeOf.SHORT + (int) count];
             buffer[offset++] = TC_STRING;
-            Memory.pokeShort(buffer, offset, (short) count, ByteOrder.BIG_ENDIAN);
+            Memory.pokeShort(buffer, offset, (short) count, false);
             offset += SizeOf.SHORT;
         } else {
             buffer = new byte[1 + SizeOf.LONG + (int) count];
             buffer[offset++] = TC_LONGSTRING;
-            Memory.pokeLong(buffer, offset, count, ByteOrder.BIG_ENDIAN);
+            Memory.pokeLong(buffer, offset, count, false);
             offset += SizeOf.LONG;
         }
         ModifiedUtf8.encode(buffer, offset, object);

@@ -114,7 +114,7 @@ interface Cloneable<T> {
 	fun clone(): T
 }
 
-open class AstStm : AstElement, Cloneable<AstStm> {
+sealed class AstStm : AstElement, Cloneable<AstStm> {
 	class Box(_value: AstStm) {
 		var value: AstStm = _value
 			get() = field
@@ -143,6 +143,7 @@ open class AstStm : AstElement, Cloneable<AstStm> {
 
 	class STMS(stms: List<AstStm>, dummy: Boolean) : AstStm() {
 		val stms = stms.map { it.box }
+		val stmsUnboxed get() = stms.map { it.value }
 	}
 
 	class NOP(val reason: String) : AstStm() {
@@ -211,8 +212,8 @@ open class AstStm : AstElement, Cloneable<AstStm> {
 	class RETURN_VOID() : AstStm() {
 	}
 
-	class THROW(value: AstExpr) : AstStm() {
-		val value = value.box
+	class THROW(exception: AstExpr) : AstStm() {
+		val exception = exception.box
 	}
 
 	class RETHROW() : AstStm()
@@ -227,7 +228,7 @@ open class AstStm : AstElement, Cloneable<AstStm> {
 	class CONTINUE() : AstStm()
 
 	// SwitchFeature
-	class SWITCH(subject: AstExpr, default: AstStm, cases: List<Pair<Int, AstStm>>) : AstStm() {
+	class SWITCH(subject: AstExpr, default: AstStm, cases: List<Pair<List<Int>, AstStm>>) : AstStm() {
 		val subject = subject.box
 		val default = default.box
 		val cases = cases.map { it.first to it.second.box }
@@ -237,7 +238,7 @@ open class AstStm : AstElement, Cloneable<AstStm> {
 
 	class STM_LABEL(val label: AstLabel) : AstStm()
 
-	class SWITCH_GOTO(subject: AstExpr, val default: AstLabel, val cases: List<Pair<Int, AstLabel>>) : AstStm() {
+	class SWITCH_GOTO(subject: AstExpr, val default: AstLabel, val cases: List<Pair<List<Int>, AstLabel>>) : AstStm() {
 		val subject = subject.box
 	}
 
@@ -386,6 +387,9 @@ abstract class AstExpr : AstElement, Cloneable<AstExpr> {
 
 	class LITERAL constructor(override val value: Any?, dummy: Boolean) : LiteralExpr() {
 		override val type = AstType.fromConstant(value)
+
+		val valueAsInt: Int get() = (value as Number).toInt()
+		val valueAsLong: Long get() = (value as Number).toLong()
 	}
 
 	class LITERAL_REFNAME(override val value: Any?) : LiteralExpr() {
@@ -413,8 +417,12 @@ abstract class AstExpr : AstElement, Cloneable<AstExpr> {
 		abstract val isSpecial: Boolean
 	}
 
-	class CALL_INSTANCE(obj: AstExpr, override val method: AstMethodRef, args: List<AstExpr>, override val isSpecial: Boolean = false) : CALL_BASE() {
-		val obj = obj.box
+	abstract class CALL_BASE_OBJECT : CALL_BASE() {
+		abstract val obj: AstExpr.Box
+	}
+
+	class CALL_INSTANCE(obj: AstExpr, override val method: AstMethodRef, args: List<AstExpr>, override val isSpecial: Boolean = false) : CALL_BASE_OBJECT() {
+		override val obj = obj.box
 		override val args = args.map { it.box }
 
 		override val type = method.type.ret
@@ -427,8 +435,8 @@ abstract class AstExpr : AstElement, Cloneable<AstExpr> {
 	//	override val type = method.type.ret
 	//}
 
-	class CALL_SUPER(obj: AstExpr, val target: FqName, override val method: AstMethodRef, args: List<AstExpr>, override val isSpecial: Boolean = false) : CALL_BASE() {
-		val obj = obj.box
+	class CALL_SUPER(obj: AstExpr, val target: FqName, override val method: AstMethodRef, args: List<AstExpr>, override val isSpecial: Boolean = false) : CALL_BASE_OBJECT() {
+		override val obj = obj.box
 		override val args = args.map { it.box }
 
 		override val type = method.type.ret
@@ -469,13 +477,19 @@ abstract class AstExpr : AstElement, Cloneable<AstExpr> {
 		override val type = AstType.BOOL
 	}
 
-	class CAST constructor(expr: AstExpr, val to: AstType, val dummy: Boolean) : AstExpr() {
+	abstract class BaseCast(expr: AstExpr, val to: AstType) : AstExpr() {
 		val subject = expr.box
 		val from: AstType get() = subject.type
 
 		override val type = to
+	}
 
-		override fun clone(): AstExpr = CAST(subject.value.clone(), to, true)
+	class CAST internal constructor(expr: AstExpr, to: AstType, dummy: Boolean) : BaseCast(expr, to) {
+		override fun clone(): AstExpr = CAST(subject.value.clone(), to, dummy = true)
+	}
+
+	class CHECK_CAST internal constructor(expr: AstExpr, to: AstType, dummy: Boolean) : BaseCast(expr, to) {
+		override fun clone(): AstExpr = CHECK_CAST(subject.value.clone(), to, dummy = true)
 	}
 
 	class NEW(val target: AstType.REF) : AstExpr() {
@@ -511,9 +525,9 @@ abstract class AstExpr : AstElement, Cloneable<AstExpr> {
 	class INVOKE_DYNAMIC_METHOD(
 		val methodInInterfaceRef: AstMethodRef,
 		val methodToConvertRef: AstMethodRef,
-		var extraArgCount: Int
+		var extraArgCount: Int,
+		var startArgs: List<AstExpr.Box> = listOf<AstExpr.Box>()
 	) : AstExpr() {
-		var startArgs = listOf<AstExpr>()
 		override val type = AstType.REF(methodInInterfaceRef.containingClass)
 	}
 
@@ -529,6 +543,9 @@ abstract class AstExpr : AstElement, Cloneable<AstExpr> {
 		override val type: AstType = types.unify(etrue.type, efalse.type)
 	}
 }
+
+val List<AstExpr.Box>.exprs: List<AstExpr> get() = this.map { it.value }
+val List<AstExpr>.boxes: List<AstExpr.Box> get() = this.map { it.box }
 
 fun AstExpr.LOCAL.setTo(value: AstExpr): AstStm.SET_LOCAL {
 	val stm = AstStm.SET_LOCAL(this, value.castTo(this.type), dummy = true)
@@ -555,7 +572,7 @@ fun AstExpr.isPure(): Boolean = when (this) {
 	is AstExpr.BINOP -> this.left.isPure() && this.right.isPure()
 	is AstExpr.UNOP -> this.right.isPure()
 	is AstExpr.CALL_BASE -> false // we would have to check call pureness
-	is AstExpr.CAST -> this.subject.isPure()
+	is AstExpr.BaseCast -> this.subject.isPure()
 	is AstExpr.FIELD_INSTANCE_ACCESS -> this.expr.isPure()
 	is AstExpr.INSTANCE_OF -> this.expr.isPure()
 	is AstExpr.TERNARY -> this.cond.isPure() && this.etrue.isPure() && this.efalse.isPure()
@@ -577,8 +594,9 @@ fun AstExpr.isPure(): Boolean = when (this) {
 	}
 }
 
-fun AstExpr.castToUnoptimized(type: AstType): AstExpr = AstExpr.CAST(this, type, true)
 fun AstExpr.castTo(type: AstType): AstExpr = this.castToInternal(type)
+fun AstExpr.castToUnoptimized(type: AstType): AstExpr = AstExpr.CAST(this, type, dummy = true)
+fun AstExpr.checkedCastTo(type: AstType): AstExpr = AstExpr.CHECK_CAST(this, type, dummy = true)
 
 fun AstExpr.withoutCast(): AstExpr = when (this) {
 	is AstExpr.CAST -> this.subject.value
@@ -640,26 +658,35 @@ object AstExprUtils {
 	}
 
 	fun INVOKE_DYNAMIC(generatedMethodRef: AstMethodWithoutClassRef, bootstrapMethodRef: AstMethodRef, bootstrapArgs: List<AstExpr>): AstExpr {
-		if (bootstrapMethodRef.containingClass.fqname == "java.lang.invoke.LambdaMetafactory" &&
-			bootstrapMethodRef.name == "metafactory"
+		if (bootstrapMethodRef.containingClass.fqname == "java.lang.invoke.LambdaMetafactory"
 			) {
-			val literals = bootstrapArgs.cast<AstExpr.LiteralExpr>()
-			val interfaceMethodType = literals[0].value as AstType.METHOD
-			val methodHandle = literals[1].value as AstMethodHandle
-			val methodType = literals[2].type
+			when (bootstrapMethodRef.name) {
+				"metafactory" -> {
+					val literals = bootstrapArgs.cast<AstExpr.LiteralExpr>()
+					val interfaceMethodType = literals[0].value as AstType.METHOD
+					val methodHandle = literals[1].value as AstMethodHandle
+					val methodType = literals[2].type
 
-			val interfaceToGenerate = generatedMethodRef.type.ret as AstType.REF
-			val methodToConvertRef = methodHandle.methodRef
+					val interfaceToGenerate = generatedMethodRef.type.ret as AstType.REF
+					val methodToConvertRef = methodHandle.methodRef
 
-			val methodFromRef = AstMethodRef(interfaceToGenerate.name, generatedMethodRef.name, interfaceMethodType)
+					val methodFromRef = AstMethodRef(interfaceToGenerate.name, generatedMethodRef.name, interfaceMethodType)
 
-			return AstExpr.INVOKE_DYNAMIC_METHOD(
-				methodFromRef,
-				methodToConvertRef,
-				methodToConvertRef.type.argCount - methodFromRef.type.argCount
-			)
+					return AstExpr.INVOKE_DYNAMIC_METHOD(
+						methodFromRef,
+						methodToConvertRef,
+						methodToConvertRef.type.argCount - methodFromRef.type.argCount
+					)
+				}
+				"altMetafactory" -> {
+					noImpl("Not supported DynamicInvoke with LambdaMetafactory.altMetafactory yet!")
+				}
+				else -> {
+					noImpl("Unknown DynamicInvoke with LambdaMetafactory.${bootstrapMethodRef.name}!")
+				}
+			}
 		} else {
-			noImpl("Not supported DynamicInvoke yet!")
+			noImpl("Not supported DynamicInvoke without LambdaMetafactory yet for class ${bootstrapMethodRef.containingClass.fqname}!")
 		}
 	}
 
@@ -760,6 +787,14 @@ operator fun AstExpr.get(field: AstFieldRef) = AstExpr.FIELD_INSTANCE_ACCESS(fie
 operator fun AstExpr.get(method: MethodRef) = MethodWithRef(this, method.ref)
 operator fun AstLocal.get(method: MethodRef) = MethodWithRef(this.expr, method.ref)
 
+val AstStm.stms: List<AstStm> get() {
+	return if (this is AstStm.STMS) {
+		this.stms.map { it.value }
+	} else {
+		listOf(this)
+	}
+}
+
 val Iterable<AstStm>.stms: AstStm get() = this.toList().stm()
 fun AstExpr.not() = AstExpr.UNOP(AstUnop.NOT, this)
 
@@ -806,11 +841,13 @@ class AstBuilder2(types: AstTypes, val ctx: AstBuilderBodyCtx) : BuilderBase(typ
 
 	class AstSwitchBuilder(types: AstTypes, val ctx: AstBuilderBodyCtx) : BuilderBase(types) {
 		var default: AstStm = listOf<AstStm>().stm()
-		val cases = arrayListOf<Pair<Int, AstStm>>()
+		val cases = arrayListOf<Pair<List<Int>, AstStm>>()
 
-		inline fun CASE(subject: Int, callback: AstBuilder2.() -> Unit) {
+		inline fun CASE(subject: List<Int>, callback: AstBuilder2.() -> Unit) {
 			cases += subject to AstBuilder2(types, ctx).apply { this.callback() }.genstm()
 		}
+
+		inline fun CASE(subject: Int, callback: AstBuilder2.() -> Unit) = CASE(listOf(subject), callback)
 
 		inline fun DEFAULT(callback: AstBuilder2.() -> Unit) {
 			default = AstBuilder2(types, ctx).apply { this.callback() }.genstm()
@@ -884,5 +921,11 @@ class AstMethodHandle(val type: AstType.METHOD, val methodRef: AstMethodRef, val
 			fun fromId(id: Int) = table[id]!!
 		}
 	}
-
 }
+
+fun List<Pair<Int, AstLabel>>.groupByLabel() = this.groupBy { it.second }.map { it.value.map { it.first } to it.key }
+fun List<Pair<Int, AstStm>>.groupByLabelStm() = this.groupBy { it.second }.map { it.value.map { it.first } to it.key }
+
+fun List<Pair<List<Int>, AstLabel>>.flatCases() = this.flatMap { (cases, label) -> cases.map { it to label } }
+fun List<Pair<List<Int>, AstStm.Box>>.flatCasesStmBox() = this.flatMap { (cases, stm) -> cases.map { it to stm } }
+

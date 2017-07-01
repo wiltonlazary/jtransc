@@ -102,9 +102,11 @@ fun AsmToAstMethodBody1(clazz: AstType.REF, method: MethodNode, types: AstTypes,
 		},
 		AstBodyFlags(types = types, strictfp = method.access.hasFlag(Opcodes.ACC_STRICT), hasDynamicInvoke = hasDynamicInvoke),
 		methodRef = methodRef
-	).optimize()
+	)
 
-	return out
+	val outOptimized = out.optimize()
+
+	return outOptimized
 }
 
 fun optimize(stms: List<AstStm>, referencedLabels: HashSet<AstLabel>): List<AstStm> {
@@ -528,7 +530,7 @@ private class BasicBlockBuilder(
 		when (i.opcode) {
 			Opcodes.NEW -> stackPush(AstExpr.NEW(type as AstType.REF).castTo(AstType.OBJECT))
 			Opcodes.ANEWARRAY -> stackPush(AstExpr.NEW_ARRAY(AstType.ARRAY(type), listOf(stackPop())))
-			Opcodes.CHECKCAST -> stackPush(stackPop().castTo(type))
+			Opcodes.CHECKCAST -> stackPush(stackPop().checkedCastTo(type))
 			Opcodes.INSTANCEOF -> stackPush(AstExpr.INSTANCE_OF(stackPop(), type as AstType.Reference))
 			else -> invalidOp("$i")
 		}
@@ -641,7 +643,7 @@ private class BasicBlockBuilder(
 		)
 		if (dynamicResult is AstExpr.INVOKE_DYNAMIC_METHOD) {
 			// dynamicResult.startArgs = stackPopToLocalsCount(dynamicResult.extraArgCount).map { AstExpr.LOCAL(it) }.reversed()
-			dynamicResult.startArgs = (0 until dynamicResult.extraArgCount).map { stackPop() }.reversed()
+			dynamicResult.startArgs = (0 until dynamicResult.extraArgCount).map { stackPop().box }.reversed()
 		}
 		stackPush(dynamicResult)
 	}
@@ -783,7 +785,7 @@ private class BasicBlockBuilder(
 					stmAdd(AstStm.SWITCH_GOTO(
 						stackPop(),
 						labels.ref(labels.label(i.dflt)),
-						i.keys.cast<Int>().zip(labels2.map { labels.ref(labels.label(it)) })
+						i.keys.cast<Int>().zip(labels2.map { labels.ref(labels.label(it)) }).groupByLabel()
 					))
 					next = i.dflt
 					outgoing.addAll(labels2)
@@ -794,7 +796,7 @@ private class BasicBlockBuilder(
 					stmAdd(AstStm.SWITCH_GOTO(
 						stackPop(),
 						labels.ref(labels.label(i.dflt)),
-						(i.min..i.max).zip(labels2.map { labels.ref(labels.label(it)) })
+						(i.min..i.max).zip(labels2.map { labels.ref(labels.label(it)) }).groupByLabel()
 					))
 					next = i.dflt
 					outgoing.addAll(labels2)
@@ -836,6 +838,7 @@ private class BasicBlockBuilder(
 			outgoing = outgoing
 		)
 	}
+
 }
 
 fun AbstractInsnNode.disasm() = JvmOpcode.disasm(this)

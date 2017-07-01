@@ -1,10 +1,14 @@
 package big
 
 import android.AndroidArgsTest
+import com.jtransc.annotation.JTranscAddTemplateVars
 import com.jtransc.annotation.JTranscKeepConstructors
+import com.jtransc.io.JTranscConsole
 import com.jtransc.util.JTranscStrings
 import issues.Issue100Double
 import issues.Issue94Enum
+import issues.issue130.Issue130
+import issues.issue146.Issue146
 import javatest.*
 import javatest.lang.*
 import javatest.misc.BenchmarkTest
@@ -16,7 +20,6 @@ import javatest.utils.CopyTest
 import javatest.utils.DateTest
 import jtransc.WrappedTest
 import jtransc.bug.*
-import jtransc.java8.DefaultMethodsTest
 import jtransc.java8.Java8Test
 import jtransc.jtransc.FastMemoryTest
 import jtransc.jtransc.SimdTest
@@ -27,19 +30,25 @@ import java.io.InputStreamReader
 import java.text.NumberFormat
 import java.util.*
 
+//@JTranscAddTemplateVars(target = "cpp", variable = "CMAKE_ARGS", list = arrayOf("--help"))
 object BigTest {
+	val i = arrayOf(9.0F, 2.0F)
 	@Throws(Throwable::class)
 	@JvmStatic fun main(args: Array<String>) {
 		//Thread.sleep(5000L)
 		//KotlinPropertiesTest.main(args)
+		JTranscConsole.log("BigTest:")
 
 		// Misc tests
+		JTranscConsole.log("sleep[1]")
+		Thread.sleep(1L)
+		JTranscConsole.log("/sleep[1]")
 		StringsTest.main(args)
-		PropertiesTest.main(args);
+		PropertiesTest.main(args)
 		BasicTypesTest.main(args)
 		SystemTest.main(args)
 		CopyTest.main(args)
-		AtomicTest.main(args);
+		AtomicTest.main(args)
 		FastMemoryTest.main(args)
 		FastMemoryTest.main(args)
 		MultidimensionalArrayTest.main(args)
@@ -47,7 +56,7 @@ object BigTest {
 		//KotlinInheritanceTest.main(args)
 		SimdTest.main(args)
 		MiscTest.main(args)
-		BenchmarkTest.main(args);
+		BenchmarkTest.main(args)
 
 		// Suite tests
 		JTranscBugWithStaticInits.main(args)
@@ -94,11 +103,11 @@ object BigTest {
 		// Java8 tests
 		//JTranscClinitNotStatic.main(args)
 		//DefaultMethodsTest.main(args)
-		//Java8Test.main(args)
+		Java8Test.main(args)
 
 		// Misc
-		Base64Test.main(args);
-		CharCharMapTest.main(args);
+		Base64Test.main(args)
+		CharCharMapTest.main(args)
 
 		// Regex
 		javatest.utils.regex.RegexTest.main(args)
@@ -108,11 +117,11 @@ object BigTest {
 		keepConstructorsTest()
 
 		val `is` = InputStreamReader(ByteArrayInputStream(byteArrayOf('A'.toByte(), 'B'.toByte(), 0xC3.toByte(), 0xA1.toByte())))
-		println("readLine:" + BufferedReader(`is`).readLine())
+		println("readLine:" + TestStringTools.escape(BufferedReader(`is`).readLine()))
 
 		// Hello World functionality!
 		HelloWorldTest.main(args)
-		NumberFormatTest.main(args);
+		NumberFormatTest.main(args)
 
 		//NumberFormatTest2.main(args);
 
@@ -127,9 +136,15 @@ object BigTest {
 		Issue94Enum.main(args)
 		Issue100Double.main(args)
 
-		CaseInsensitiveOrder.main(args);
+		CaseInsensitiveOrder.main(args)
+
+		Issue130.main(args)
+
+		JTranscBug127.main(args)
 
 		System.out.println(String.format("%d%%", 100))
+
+		System.out.println(i[0] % i[1]);
 	}
 
 	private fun servicesTest() {
@@ -155,7 +170,7 @@ object NumberFormatTest {
 		for (i in ints) {
 			for (locale in locales) {
 				val s = NumberFormat.getIntegerInstance(locale).format(i.toLong())
-				println(locale.language + ":" + s)
+				println(locale.language + ":" + TestStringTools.escape(s))
 				if (s.length == 5) {
 					println(s[1].toInt())
 				}
@@ -244,7 +259,7 @@ private class CaseInsensitiveOrder {
 	companion object {
 		@JvmStatic fun main(args: Array<String>) {
 			val tm = TreeMap<String, String>(String.CASE_INSENSITIVE_ORDER)
-			tm["Ab"] = "hello";
+			tm["Ab"] = "hello"
 			println(tm["ab"])
 			println(tm["aB"])
 			println(tm["Ab"])

@@ -25,14 +25,11 @@ public abstract class Buffer {
 	int mark = UNSET_MARK;
 	int position = 0;
 	final int _elementSizeShift;
-	long effectiveDirectAddress;
 	final MemoryBlock block;
 
 	Buffer(int elementSizeShift, int capacity, MemoryBlock block) {
 		this._elementSizeShift = elementSizeShift;
-		if (capacity < 0) {
-			throw new IllegalArgumentException("capacity < 0: " + capacity);
-		}
+		if (capacity < 0) throw new IllegalArgumentException("capacity < 0: " + capacity);
 		this.capacity = this.limit = capacity;
 		this.block = block;
 	}

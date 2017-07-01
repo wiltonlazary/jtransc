@@ -1,7 +1,6 @@
 package com.jtransc.plugin.reflection
 
 import com.jtransc.annotation.JTranscInvisibleExternal
-import com.jtransc.annotation.JTranscNativeClass
 import com.jtransc.annotation.haxe.HaxeRemoveField
 import com.jtransc.ast.*
 import com.jtransc.plugin.JTranscPlugin
@@ -14,19 +13,15 @@ import j.ProgramReflection
  * This class aims to create classes to perform reflection on available classes
  */
 class MetaReflectionJTranscPlugin : JTranscPlugin() {
-	override val priority: Int = Int.MAX_VALUE
+	override val priority: Int = Int.MAX_VALUE - 1000
 
 	fun AstClass.mustReflect(invisibleExternalSet: Set<String> = setOf()): Boolean {
-		return this.visible && (this.fqname !in invisibleExternalSet) && !this.annotationsList.contains<JTranscNativeClass>()
+		return this.visible && (this.fqname !in invisibleExternalSet) && (this.annotationsList.getNativeNameForTarget(targetName) == null)
 	}
 
-	fun AstMethod.mustReflect(): Boolean {
-		return this.visible
-	}
+	fun AstMethod.mustReflect(): Boolean = this.visible
 
-	fun AstField.mustReflect(): Boolean {
-		return this.visible && !this.annotationsList.contains<HaxeRemoveField>()
-	}
+	fun AstField.mustReflect(): Boolean = this.visible && !this.annotationsList.contains<HaxeRemoveField>()
 
 	override fun processAfterTreeShaking(program: AstProgram) {
 		// Do not generate if ProgramReflection class is not referenced!
@@ -305,6 +300,8 @@ class MetaReflectionJTranscPlugin : JTranscPlugin() {
 
 			for (oldClass in visibleClasses.sortedBy { it.classId }) {
 				val classId = oldClass.classId
+				val directInterfaces = oldClass.directInterfaces
+				val relatedTypes = oldClass.getAllRelatedTypesIdsWithout0AtEnd()
 				//println("CLASS: ${oldClass.fqname}")
 				SET_ARRAY(out, classId.lit, CLASS_INFO_CREATE(
 					classId.lit,
@@ -312,8 +309,8 @@ class MetaReflectionJTranscPlugin : JTranscPlugin() {
 					oldClass.fqname.lit,
 					oldClass.modifiers.acc.lit,
 					(oldClass.parentClass?.classId ?: -1).lit,
-					AstExpr.INTARRAY_LITERAL(oldClass.directInterfaces.map { it.classId }),
-					AstExpr.INTARRAY_LITERAL(oldClass.getAllRelatedTypesIdsWithout0AtEnd())
+					if (directInterfaces.isNotEmpty()) AstExpr.INTARRAY_LITERAL(directInterfaces.map { it.classId }) else null.lit,
+					if (relatedTypes.isNotEmpty()) AstExpr.INTARRAY_LITERAL(relatedTypes) else null.lit
 				))
 			}
 			RETURN(out.local)
