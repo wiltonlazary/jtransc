@@ -11,6 +11,7 @@ import com.jtransc.ast.feature.method.SwitchFeature
 import com.jtransc.ds.concatNotNull
 import com.jtransc.ds.getOrPut2
 import com.jtransc.ds.split
+import com.jtransc.env.OS
 import com.jtransc.gen.GenTargetDescriptor
 import com.jtransc.gen.TargetBuildTarget
 import com.jtransc.gen.common.*
@@ -90,6 +91,8 @@ class HaxeTarget : GenTargetDescriptor() {
 
 @Singleton
 class HaxeGenerator(injector: Injector) : CommonGenerator(injector) {
+	override val TARGET_NAME: String = "HAXE"
+
 	companion object {
 		//const val ENABLE_HXCPP_GOTO_HACK = true
 		const val ENABLE_HXCPP_GOTO_HACK = false // @TODO: If last statement is a goto. Add return null; or return; at the end
@@ -149,19 +152,37 @@ class HaxeGenerator(injector: Injector) : CommonGenerator(injector) {
 
 	override fun genLabel(label: AstLabel): String = "untyped __cpp__('${label.name}:;');"
 
+	val __out_var = "__out_var"
+
 	override fun genStmReturnVoid(stm: AstStm.RETURN_VOID, last: Boolean): Indenter {
-		val res = super.genStmReturnVoid(stm, last)
+		val res = Indenter {
+			lineMonitorExitIfRequired()
+			if (context.method.methodVoidReturnThis) {
+				line("return this;")
+			} else {
+				line("return;")
+			}
+		}
 		if (usingGotoHack && !last) {
-			return Indenter("if (untyped __cpp__('true')) " + res.toString())
+			return Indenter("if (untyped __cpp__('true')) { " + res.toString() + " }")
 		} else {
 			return res
 		}
 	}
 
 	override fun genStmReturnValue(stm: AstStm.RETURN, last: Boolean): Indenter {
-		val res = super.genStmReturnValue(stm, last)
+		val res = Indenter {
+			if (context.method.isSynchronized) {
+				line("$__out_var = ${stm.retval.genExpr()};")
+				lineMonitorExit()
+				line("return $__out_var;")
+			} else {
+				line("return ${stm.retval.genExpr()};")
+			}
+		}
+
 		if (usingGotoHack && !last) {
-			return Indenter("if (untyped __cpp__('true')) " + res.toString())
+			return Indenter("if (untyped __cpp__('true')) { " + res.toString() + " }")
 		} else {
 			return res
 		}
@@ -218,7 +239,7 @@ class HaxeGenerator(injector: Injector) : CommonGenerator(injector) {
 	//override val tempdir = configTargetDirectory.targetDirectory
 	val mergedAssetsFolder = haxeConfigMergedAssetsFolder?.mergedAssetsFolder
 	val mergedAssetsVfs by lazy { LocalVfs(mergedAssetsFolder!!) }
-	//override val outputFile2 = configOutputFile2.file
+//override val outputFile2 = configOutputFile2.file
 
 	override fun writeProgramAndFiles() {
 		_write()
@@ -239,13 +260,13 @@ class HaxeGenerator(injector: Injector) : CommonGenerator(injector) {
 		}
 	}
 
-	//override fun genStmSwitch(stm: AstStm.SWITCH): Indenter = if (stm.cases.size > MAX_SWITCH_SIZE) {
-	//	this.genStm2(stm.reduceSwitch(maxChunkSize = 10))
-	//} else {
-	//	super.genStmSwitch(stm)
-	//}
+//override fun genStmSwitch(stm: AstStm.SWITCH): Indenter = if (stm.cases.size > MAX_SWITCH_SIZE) {
+//	this.genStm2(stm.reduceSwitch(maxChunkSize = 10))
+//} else {
+//	super.genStmSwitch(stm)
+//}
 
-	//val BUILD_COMMAND = listOf("haxelib", "run", "lime", "@@SWITCHES", "build", "@@SUBTARGET")
+//val BUILD_COMMAND = listOf("haxelib", "run", "lime", "@@SWITCHES", "build", "@@SUBTARGET")
 
 	override fun compileAndRun(redirect: Boolean): ProcessResult2 {
 		return _compileRun(run = true, redirect = redirect)
@@ -328,7 +349,7 @@ class HaxeGenerator(injector: Injector) : CommonGenerator(injector) {
 
 		val releaseDebugSuffix = when {
 			debugVersion -> "-debug"
-			//else -> "-release"
+		//else -> "-release"
 			else -> ""
 		}
 
@@ -494,7 +515,7 @@ class HaxeGenerator(injector: Injector) : CommonGenerator(injector) {
 	}
 
 	//"Std.is(${e.expr.genExpr()}, ${e.checkType.targetTypeCast})"
-	//override fun N_is(a: String, b: String) = "N.is($a, $b)"
+//override fun N_is(a: String, b: String) = "N.is($a, $b)"
 	override fun N_is(a: String, b: String) = "Std.is($a, $b)"
 
 	override fun N_z2i(str: String) = "N.z2i($str)"
@@ -505,25 +526,28 @@ class HaxeGenerator(injector: Injector) : CommonGenerator(injector) {
 
 	//override fun N_i2b(str: String) = "N.i2b($str)"
 	override fun N_i2b(str: String) = if (subtarget == "cpp") {
-		"NE.i2b($str)"
+		//"NE.i2b($str)"
+		"N.i2b($str)"
 	} else {
 		if (inlineCasts) "(($str) << 24 >> 24)" else "N.i2b($str)"
 	}
 
 	override fun N_i2c(str: String) = if (subtarget == "cpp") {
-		"NE.i2c($str)"
+		//"NE.i2c($str)"
+		"N.i2c($str)"
 	} else {
 		if (inlineCasts) "(($str) & 0xFFFF)" else "N.i2c($str)"
 	}
 
 	override fun N_i2s(str: String) = if (subtarget == "cpp") {
 		//"(untyped __cpp__('((int)(short)({0}))', $str))"
-		"NE.i2s($str)"
+		//"NE.i2s($str)"
+		"N.i2s($str)"
 	} else {
 		if (inlineCasts) "(($str) << 16 >> 16)" else "N.i2s($str)"
 	}
 
-	override fun N_f2i(str: String) = "Std.int($str)"
+	override fun N_f2i(str: String) = "N.f2i($str)"
 	override fun N_i2i(str: String) = N_i(str)
 	override fun N_i2j(str: String) = "N.intToLong($str)"
 	override fun N_i2f(str: String) = "($str)"
@@ -532,8 +556,8 @@ class HaxeGenerator(injector: Injector) : CommonGenerator(injector) {
 	override fun N_f2d(str: String) = "($str)"
 	override fun N_d2f(str: String) = "(($str))"
 	override fun N_d2d(str: String) = "($str)"
-	override fun N_d2i(str: String) = "Std.int($str)"
-	override fun N_j2i(str: String) = "(($str).low)"
+	override fun N_d2i(str: String) = "N.d2i($str)"
+	override fun N_j2i(str: String) = "(N.llow($str))"
 	override fun N_j2j(str: String) = "($str)"
 	override fun N_j2f(str: String) = "N.longToFloat($str)"
 	override fun N_j2d(str: String) = "N.longToFloat($str)"
@@ -654,7 +678,10 @@ class HaxeGenerator(injector: Injector) : CommonGenerator(injector) {
 							line(method.getHaxeNativeBody {
 								rbody?.genBodyWithFeatures(method) ?: Indenter("throw '${str}';")
 							})
-							if (method.methodVoidReturnThis) line("return this;")
+							if (method.methodVoidReturnThis) {
+								lineMonitorExitIfRequired()
+								line("return this;")
+							}
 						} catch (e: Throwable) {
 							//e.printStackTrace()
 							log.warn("WARNING haxe_gen.writeMethod:" + e.message)
@@ -772,12 +799,13 @@ class HaxeGenerator(injector: Injector) : CommonGenerator(injector) {
 
 	override fun buildStaticInit(clazzName: FqName) = null
 
-	override val FqName.targetNameForStatic: String get() {
-		val clazz = program[this]
-		val simpleName = this.targetSimpleName
-		val suffix = if (clazz.isInterface) ".${simpleName}_IFields" else ""
-		return clazz.name.targetClassFqName + suffix
-	}
+	override val FqName.targetNameForStatic: String
+		get() {
+			val clazz = program[this]
+			val simpleName = this.targetSimpleName
+			val suffix = if (clazz.isInterface) ".${simpleName}_IFields" else ""
+			return clazz.name.targetClassFqName + suffix
+		}
 
 	override fun buildTemplateClass(clazz: FqName): String = clazz.targetClassFqName
 
@@ -831,7 +859,7 @@ class HaxeGenerator(injector: Injector) : CommonGenerator(injector) {
 	override val DoublePositiveInfinityString = "Math.POSITIVE_INFINITY"
 	override val DoubleNanString = "Math.NaN"
 
-	///////////////////////////
+///////////////////////////
 
 	//val actualSubtarget = configActualSubtarget.subtarget
 	override val srcFolder = HaxeGenTools.getSrcFolder(tempdir)
@@ -862,8 +890,19 @@ class HaxeGenerator(injector: Injector) : CommonGenerator(injector) {
 					{{ flag.first }}
 					{{ flag.second }}
 				{% end %}
-				-D
-				HXCPP_M64
+				""" +
+				if (OS.isWindows) {
+					"""
+					-D
+					HXCPP_M32
+					"""
+				} else {
+					"""
+					-D
+					HXCPP_M64
+					"""
+				} +
+				"""
 				{% for define in haxeExtraDefines %}
 					-D
 					{{ define }}
@@ -883,7 +922,7 @@ class HaxeGenerator(injector: Injector) : CommonGenerator(injector) {
 		params["HAXE_METHOD_ANNOTATIONS"] = METHOD_ANNOTATIONS
 	}
 
-	//override val AstMethod.targetIsOverriding: Boolean get() = this.isOverriding && !this.isInstanceInit
+//override val AstMethod.targetIsOverriding: Boolean get() = this.isOverriding && !this.isInstanceInit
 
 	override val AstType.localDeclType: String get() = "var"
 
@@ -893,7 +932,7 @@ class HaxeGenerator(injector: Injector) : CommonGenerator(injector) {
 		return "N.CHECK_CAST($e, ${to.targetNameRef})"
 	}
 
-	override fun genExprCallBaseSuper(e2: AstExpr.CALL_SUPER, clazz: AstType.REF, refMethodClass: AstClass, method: AstMethodRef, methodAccess: String, args: List<String>): String {
+	override fun genExprCallBaseSuper(e2: AstExpr.CALL_SUPER, clazz: AstType.REF, refMethodClass: AstClass, method: AstMethodRef, methodAccess: String, args: List<String>, isNativeCall: Boolean): String {
 		return "super$methodAccess(${args.joinToString(", ")})"
 	}
 
@@ -904,6 +943,37 @@ class HaxeGenerator(injector: Injector) : CommonGenerator(injector) {
 			size <= 12 -> "JA_I${staticAccessOperator}T$size(" + e.values.joinToString(",") + ")"
 			else -> "JA_I${staticAccessOperator}T([" + e.values.joinToString(",") + "])"
 		}
+	}
+
+	override fun genStmSetArrayLiterals(stm: AstStm.SET_ARRAY_LITERALS) = Indenter {
+		line("${stm.array.genExpr()}.setArraySlice(${stm.startIndex}, [${stm.values.map { it.genExpr() }.joinToString(", ")}]);")
+	}
+
+	override fun genBody2WithFeatures(method: AstMethod, body: AstBody): Indenter = Indenter {
+		if (method.isSynchronized) {
+			line("var $__out_var;")
+			lineMonitorEnter()
+			line("try {")
+			indent {
+				line(genBody2WithFeatures2(method, body))
+			}
+			line("} catch (e: Dynamic) {")
+			indent {
+				lineMonitorExit()
+				line("throw e;")
+			}
+			line("}")
+		} else {
+			line(genBody2WithFeatures2(method, body))
+		}
+	}
+
+	override fun genStmMonitorEnter(stm: AstStm.MONITOR_ENTER) = indent {
+		line("N.monitorEnter(" + stm.expr.genExpr() + ");")
+	}
+
+	override fun genStmMonitorExit(stm: AstStm.MONITOR_EXIT) = indent {
+		line("N.monitorExit(" + stm.expr.genExpr() + ");")
 	}
 }
 

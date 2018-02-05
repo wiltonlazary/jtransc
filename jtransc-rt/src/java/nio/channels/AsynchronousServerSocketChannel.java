@@ -1,3 +1,19 @@
+/*
+ *  Licensed to the Apache Software Foundation (ASF) under one or more
+ *  contributor license agreements.  See the NOTICE file distributed with
+ *  this work for additional information regarding copyright ownership.
+ *  The ASF licenses this file to You under the Apache License, Version 2.0
+ *  (the "License"); you may not use this file except in compliance with
+ *  the License.  You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an "AS IS" BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
 package java.nio.channels;
 
 import com.jtransc.annotation.JTranscMethodBody;
@@ -48,7 +64,7 @@ public class AsynchronousServerSocketChannel implements AsynchronousChannel, Net
 		"var net = require('net');",
 		"var _this = this;",
 		"this.server = net.createServer(function(socket) {",
-		"	var client = {% CONSTRUCTOR java.nio.channels.AsynchronousSocketChannel:()V %}();",
+		"	var client = {% CONSTRUCTOR java.nio.channels.AsynchronousSocketChannel:()V %}({{ JC }});",
 		"	client.client = socket;",
 		"	_this.clients.push(client);",
 		"	if (_this.handlers.length != 0) { _this.handlers.shift()(_this.clients.shift()); }",
@@ -83,7 +99,7 @@ public class AsynchronousServerSocketChannel implements AsynchronousChannel, Net
 	@JTranscMethodBody(target = "js", value = {
 		"var attachment = p0, handler = p1;",
 		"var handlers = this.handlers;",
-		"function fhandle(client) { handler{% IMETHOD java.nio.channels.CompletionHandler:completed %}(client, attachment); }",
+		"function fhandle(client) { handler{% IMETHOD java.nio.channels.CompletionHandler:completed %}({{ JC_COMMA }}client, attachment); }",
 		"if (this.clients.length != 0) { fhandle(this.clients.shift()); } else { this.handlers.push(fhandle); }"
 	})
 	public native <A> void accept(A attachment, CompletionHandler<AsynchronousSocketChannel, ? super A> handler);

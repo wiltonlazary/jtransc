@@ -7,7 +7,6 @@ import com.jtransc.annotation.JTranscAddHeaderList
 import com.jtransc.ast.*
 import com.jtransc.ast.feature.method.*
 import com.jtransc.error.invalidOp
-import com.jtransc.error.noImpl
 import com.jtransc.gen.GenTargetDescriptor
 import com.jtransc.gen.TargetBuildTarget
 import com.jtransc.gen.common.*
@@ -17,6 +16,7 @@ import com.jtransc.injector.Singleton
 import com.jtransc.io.ProcessResult2
 import com.jtransc.text.Indenter
 import com.jtransc.text.quote
+import com.jtransc.text.toCommentString
 import com.jtransc.text.uquote
 import com.jtransc.vfs.ExecOptions
 import com.jtransc.vfs.LocalVfs
@@ -68,8 +68,13 @@ class CppTarget : GenTargetDescriptor() {
 
 @Singleton
 class CppGenerator(injector: Injector) : CommonGenerator(injector) {
+	override val TARGET_NAME: String = "CPP"
 	override val SINGLE_FILE: Boolean = true
 	override val GENERATE_LINE_NUMBERS = false
+
+	override val ARRAY_SUPPORT_SHORTCUTS = false
+	override val ARRAY_OPEN_SYMBOL = "{"
+	override val ARRAY_CLOSE_SYMBOL = "}"
 
 //	override val methodFeaturesWithTraps = setOf(SwitchFeature::class.java, UndeterministicParameterEvaluationFeature::class.java)
 //	override val methodFeatures = methodFeaturesWithTraps + setOf(GotosFeature::class.java)
@@ -177,6 +182,31 @@ class CppGenerator(injector: Injector) : CommonGenerator(injector) {
 					line("{ 1, new int32_t[1]{$objectClassId} },")
 				} else {
 					line("TABLE_INFO_NULL,")
+				}
+			}
+		}
+	}
+
+	fun generateCppCtorMap() = Indenter {
+		line("typedef JAVA_OBJECT* (*ctor_func)(void);")
+		//line("const int32_t TYPE_TABLE::count = $lastClassId;")
+		line("static ctor_func CTOR_TABLE[$lastClassId] =", after2 = ";") {
+			val classesById = program.classes.map { it.classId to it }.toMap()
+
+			@Suppress("LoopToCallChain")
+			for (n in 0 until lastClassId) {
+				val clazz = classesById[n]
+				if (clazz != null && !clazz.mustGenerate) {
+					println("$n:" + clazz)
+				}
+				if (clazz != null && clazz.mustGenerate && !clazz.isAbstract && !clazz.isInterface) {
+					line("[](){return (JAVA_OBJECT*)(new ${clazz.cppName}());},")
+				} else if (clazz != null && clazz.mustGenerate && (clazz.isAbstract || clazz.isInterface)) {
+					line("[](){ std::cerr << \"Class id \" << $n << \" refers to abstract class or interface!\"; abort(); return (JAVA_OBJECT*)(NULL);},")
+				} else if (n == 1) {
+					line("[](){ std::cerr << \"Class id \" << $n << \" refers to array base class!\"; abort(); return (JAVA_OBJECT*)(NULL);},")
+				} else {
+					line("[](){ std::cerr << \"Class id \" << $n << \" referred to a null clazz at compile time!\"; abort(); return (JAVA_OBJECT*)(NULL);},")
 				}
 			}
 		}
@@ -347,6 +377,7 @@ class CppGenerator(injector: Injector) : CommonGenerator(injector) {
 		}
 
 		val CLASSES_IMPL = Indenter { line(impls) }
+		val CPP_CTOR_MAP = Indenter { line(generateCppCtorMap()) }
 		val TYPE_TABLE_FOOTER = Indenter { line(generateTypeTableFooter()) }
 		val MAIN = Indenter { line(writeMain()) }
 
@@ -366,6 +397,7 @@ class CppGenerator(injector: Injector) : CommonGenerator(injector) {
 				"ARRAY_HEADERS_PRE" to ARRAY_HEADERS_PRE.toString(),
 				"ARRAY_HEADERS_POST" to ARRAY_HEADERS_POST.toString(),
 				"CLASSES_IMPL" to CLASSES_IMPL.toString(),
+				"CPP_CTOR_MAP" to CPP_CTOR_MAP.toString(),
 				"STRINGS" to STRINGS.toString(),
 				"TYPE_TABLE_FOOTER" to TYPE_TABLE_FOOTER.toString(),
 				"MAIN" to MAIN.toString()
@@ -407,10 +439,10 @@ class CppGenerator(injector: Injector) : CommonGenerator(injector) {
 			//	line("""std::wcout  << L"${"java.lang.Throwable".fqname.targetName}:" << L"\n";""")
 			//	line("""printf("Exception: %p\n", (void*)s);""")
 			//}
-			line("catch (p_java_lang_Object s)") {
-				val toStringMethod = program["java.lang.Object".fqname].getMethodWithoutOverrides("toString")!!.targetName
-				line("""std::wcout << L"ERROR p_java_lang_Object " << N::istr2(s->$toStringMethod()) << L"\n";""")
-			}
+			//line("catch (p_java_lang_Object s)") {
+			//	val toStringMethod = program["java.lang.Object".fqname].getMethodWithoutOverrides("toString")!!.targetName
+			//	line("""std::wcout << L"ERROR p_java_lang_Object " << N::istr2(s->$toStringMethod()) << L"\n";""")
+			//}
 			//line("catch (...)") {
 			//	line("""std::wcout << L"ERROR unhandled unknown exception\n";""")
 			//}
@@ -446,7 +478,9 @@ class CppGenerator(injector: Injector) : CommonGenerator(injector) {
 		indent {
 			for (memberCond in clazz.nativeMembers) {
 				condWrapper(memberCond.cond) {
-					lines(memberCond.members)
+					for (member in memberCond.members) {
+						line(member.replace("###", "").template("native members"))
+					}
 				}
 			}
 
@@ -548,6 +582,16 @@ class CppGenerator(injector: Injector) : CommonGenerator(injector) {
 					line(writeMethod(method))
 				} catch (e: Throwable) {
 					throw RuntimeException("Couldn't generate method $method for class $clazz due to ${e.message}", e)
+				}
+			}
+		}
+
+		for (memberCond in clazz.nativeMembers) {
+			condWrapper(memberCond.cond) {
+				for (member in memberCond.members) {
+					if (member.startsWith("static ")) {
+						line(member.replace("###", "${clazz.cppName}::").replace("static ", "").template("native members 2"))
+					}
 				}
 			}
 		}
@@ -654,27 +698,31 @@ class CppGenerator(injector: Injector) : CommonGenerator(injector) {
 
 
 		line("typedef ${toNativeType(method.methodType.ret)} (JNICALL *func_ptr_t)(${standardJniArgumentString + nativeParameterString});")
-		line("static void* nativePointer = NULL;")
+		line("static void* nativePointer = nullptr;")
+
 		//{% CLASS ${method.containingClass.fqname} %}
-		line("func_ptr_t fptr = (func_ptr_t)N::jtvmResolveNative(N::resolveClass(L\"${method.containingClass.fqname}\"), \"${JniUtils.mangleShortJavaMethod(method)}\", \"${JniUtils.mangleLongJavaMethod(method)}\", &nativePointer);")
+		line("func_ptr_t fptr = (func_ptr_t)DYN::jtvmResolveNative(N::resolveClass(L\"${method.containingClass.fqname}\"), \"${JniUtils.mangleShortJavaMethod(method)}\", \"${JniUtils.mangleLongJavaMethod(method)}\", &nativePointer);")
+
+		fun genJavaToJniCast(arg: AstType): String {
+			if (arg is AstType.REF) {
+				return "(${referenceToNativeType(arg)})"
+			} else if (arg is AstType.ARRAY) {
+				return "(${arrayToNativeType(arg)})"
+			} else {
+				return "";
+			}
+		}
+
+		fun genJniToJavaCast(arg: AstType): String {
+			return "(${arg.targetNameRef})"
+		}
 
 		val sb2 = StringBuilder(30)
 		for (i in method.methodType.args.indices) {
 			val arg = method.methodType.args[i].type
-			if (arg is AstType.REF) {
-				sb2.append(", ((${referenceToNativeType(arg)})((SOBJ)")
-				sb2.append("p$i")
-				sb2.append(").get())")
-			} else if (arg is AstType.ARRAY) {
-				sb2.append(", ((${arrayToNativeType(arg)})((SOBJ)")
-				sb2.append("p$i")
-				sb2.append(").get())")
-			} else {
-				sb2.append(", p${i}")
-			}
-
+			sb2.append(", ${genJavaToJniCast(arg)}p${i}")
 		}
-		line("return fptr(N::getJniEnv(), NULL $sb2);")
+		line("return ${genJniToJavaCast(method.actualRetType)}fptr(N::getJniEnv(), NULL $sb2);")
 		//line("JNI: \"Empty BODY : ${method.containingClass.name}::${method.name}::${method.desc}\";")
 	}
 
@@ -812,7 +860,7 @@ class CppGenerator(injector: Injector) : CommonGenerator(injector) {
 		}
 	}
 
-	override fun genExprCallBaseInstance(e2: AstExpr.CALL_INSTANCE, clazz: AstType.REF, refMethodClass: AstClass, method: AstMethodRef, methodAccess: String, args: List<String>): String {
+	override fun genExprCallBaseInstance(e2: AstExpr.CALL_INSTANCE, clazz: AstType.REF, refMethodClass: AstClass, method: AstMethodRef, methodAccess: String, args: List<String>, isNativeCall: Boolean): String {
 		//return "((${refMethodClass.cppName}*)(${e2.obj.genNotNull()}.get()))$methodAccess(${args.joinToString(", ")})"
 		if (isThisOrThisWithCast(e2.obj.value)) {
 			return "this$methodAccess(${args.joinToString(", ")})"
@@ -822,7 +870,7 @@ class CppGenerator(injector: Injector) : CommonGenerator(injector) {
 		}
 	}
 
-	override fun genExprCallBaseSuper(e2: AstExpr.CALL_SUPER, clazz: AstType.REF, refMethodClass: AstClass, method: AstMethodRef, methodAccess: String, args: List<String>): String {
+	override fun genExprCallBaseSuper(e2: AstExpr.CALL_SUPER, clazz: AstType.REF, refMethodClass: AstClass, method: AstMethodRef, methodAccess: String, args: List<String>, isNativeCall: Boolean): String {
 		val superMethod = refMethodClass[method.withoutClass] ?: invalidOp("Can't find super for method : $method")
 		return "${refMethodClass.ref.cppName}::${superMethod.targetName}(${args.joinToString(", ")})"
 	}
@@ -831,24 +879,25 @@ class CppGenerator(injector: Injector) : CommonGenerator(injector) {
 	fun genExprThis(): String = "this" //->sptr()"
 	override fun genExprMethodClass(e: AstExpr.INVOKE_DYNAMIC_METHOD): String = "N::dummyMethodClass()"
 
-	override val AstType.targetNameRef: String get() {
-		if (ENABLE_TYPING) {
-			return getTypeTargetName(this, ref = true)
-		} else {
-			if (this is AstType.Reference) {
-				if (this is AstType.REF) {
-					val clazz = program[this]!!
-					val nativeName = clazz.nativeName
-					if (nativeName != null) {
-						return nativeName
-					}
-				}
-				return "p_java_lang_Object"
-			} else {
+	override val AstType.targetNameRef: String
+		get() {
+			if (ENABLE_TYPING) {
 				return getTypeTargetName(this, ref = true)
+			} else {
+				if (this is AstType.Reference) {
+					if (this is AstType.REF) {
+						val clazz = program[this]!!
+						val nativeName = clazz.nativeName
+						if (nativeName != null) {
+							return nativeName
+						}
+					}
+					return "p_java_lang_Object"
+				} else {
+					return getTypeTargetName(this, ref = true)
+				}
 			}
 		}
-	}
 
 	val AstType.targetNameRefCast: String get() = getTypeTargetName(this, ref = true)
 
@@ -861,11 +910,18 @@ class CppGenerator(injector: Injector) : CommonGenerator(injector) {
 	//	}
 	//}
 
+	override fun genBody2WithFeatures(method: AstMethod, body: AstBody): Indenter = Indenter {
+		if (method.isSynchronized) {
+			line("SynchronizedMethodLocker __locker(" + getMonitorLockedObjectExpr(method).genExpr() + ");")
+		}
+		line(genBody2WithFeatures2(method, body))
+	}
+
 	override fun N_i2b(str: String) = "((int8_t)($str))"
 	override fun N_i2c(str: String) = "((uint16_t)($str))"
 	override fun N_i2s(str: String) = "((int16_t)($str))"
-	override fun N_f2i(str: String) = "((int32_t)($str))"
-	override fun N_d2i(str: String) = "((int32_t)($str))"
+	override fun N_f2i(str: String) = "N::f2i($str)"
+	override fun N_d2i(str: String) = "N::d2i($str)"
 
 	override fun N_i2f(str: String) = "((float)($str))"
 	override fun N_i2d(str: String) = "((double)($str))"
@@ -966,9 +1022,9 @@ class CppGenerator(injector: Injector) : CommonGenerator(injector) {
 		}
 	}
 
-	override fun genExprStringArrayLit(e: AstExpr.STRINGARRAY_LITERAL): String {
-		noImpl("C++ genExprStringArrayLit")
-	}
+	//override fun genExprObjectArrayLit(e: AstExpr.OBJECTARRAY_LITERAL): String {
+	//	noImpl("C++ genExprStringArrayLit")
+	//}
 
 	override fun createArraySingle(e: AstExpr.NEW_ARRAY, desc: String): String {
 		return if (e.type.elementType !is AstType.Primitive) {
@@ -981,8 +1037,6 @@ class CppGenerator(injector: Injector) : CommonGenerator(injector) {
 	override fun createArrayMultisure(e: AstExpr.NEW_ARRAY, desc: String): String {
 		return "$ObjectArrayType${staticAccessOperator}createMultiSure(L\"$desc\", { ${e.counts.map { it.genExpr() }.joinToString(", ")} } )"
 	}
-
-	override fun genExprNew(e: AstExpr.NEW): String = "" + super.genExprNew(e) + ""
 
 	override fun genStmRawTry(trap: AstTrap): Indenter = Indenter {
 		//line("try {")
@@ -1058,8 +1112,10 @@ class CppGenerator(injector: Injector) : CommonGenerator(injector) {
 	override val FloatPositiveInfinityString = "N::INFINITY_FLOAT"
 	override val FloatNanString = "N::NAN_FLOAT"
 
-	override val String.escapeString: String get() = "STRINGLIT_${allocString(currentClass, this)}"
+	override val String.escapeString: String get() = "STRINGLIT_${allocString(currentClass, this)}${this.toCommentString()}"
 	override val AstType.escapeType: String get() = N_func("resolveClass", "L${this.mangle().uquote()}")
+
+	override fun pquote(str: String): String = "L" + str.uquote()
 
 	override fun N_lnew(value: Long): String {
 		if (value == Long.MIN_VALUE) {
@@ -1072,24 +1128,25 @@ class CppGenerator(injector: Injector) : CommonGenerator(injector) {
 
 	override val FieldRef.targetName: String get() = getNativeName(this)
 
-	override val MethodRef.targetNameBase: String get() {
-		val method = this
-		return getClassNameAllocator(method.ref.containingClass).allocate(method.ref) {
-			val astMethod = program[method.ref]!!
-			val containingClass = astMethod.containingClass
-			val prefix = if (containingClass.isInterface) "I_" else if (astMethod.isStatic) "S_" else "M_"
-			val prefix2 = if (containingClass.isInterface || method.ref.isClassOrInstanceInit) {
-				//getClassFqNameForCalling(containingClass.name) + "_"
-				containingClass.name.fqname + "_"
-			} else {
-				""
-			}
-			val suffix = "_${astMethod.name}${astMethod.desc}"
-			//"$prefix$prefix2" + super.getNativeName(method) + "$suffix"
+	override val MethodRef.targetNameBase: String
+		get() {
+			val method = this
+			return getClassNameAllocator(method.ref.containingClass).allocate(method.ref) {
+				val astMethod = program[method.ref]!!
+				val containingClass = astMethod.containingClass
+				val prefix = if (containingClass.isInterface) "I_" else if (astMethod.isStatic) "S_" else "M_"
+				val prefix2 = if (containingClass.isInterface || method.ref.isClassOrInstanceInit) {
+					//getClassFqNameForCalling(containingClass.name) + "_"
+					containingClass.name.fqname + "_"
+				} else {
+					""
+				}
+				val suffix = "_${astMethod.name}${astMethod.desc}"
+				//"$prefix$prefix2" + super.getNativeName(method) + "$suffix"
 
-			"$prefix$prefix2$suffix"
+				"$prefix$prefix2$suffix"
+			}
 		}
-	}
 
 	fun getNativeName(field: FieldRef): String {
 		val clazz = field.ref.getClass(program)
@@ -1124,5 +1181,6 @@ class CppGenerator(injector: Injector) : CommonGenerator(injector) {
 		//return e
 	}
 
-
+	override fun genStmMonitorEnter(stm: AstStm.MONITOR_ENTER) = Indenter("N::monitorEnter(" + stm.expr.genExpr() + ");")
+	override fun genStmMonitorExit(stm: AstStm.MONITOR_EXIT) = Indenter("N::monitorExit(" + stm.expr.genExpr() + ");")
 }

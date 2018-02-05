@@ -83,10 +83,6 @@ object AstDependencyAnalyzer {
 					ana(expr.to)
 					ana(expr.subject)
 				}
-				is AstExpr.NEW -> {
-					ana(expr.target)
-					allSortedRefsStaticInit += expr.target
-				}
 				is AstExpr.NEW_ARRAY -> {
 					for (c in expr.counts) ana(c)
 					ana(expr.arrayType)
@@ -96,7 +92,7 @@ object AstDependencyAnalyzer {
 					//for (c in expr.values) ana(c)
 					ana(expr.arrayType)
 				}
-				is AstExpr.STRINGARRAY_LITERAL -> {
+				is AstExpr.OBJECTARRAY_LITERAL -> {
 					//for (c in expr.values) ana(c)
 					ana(expr.arrayType)
 					allSortedRefsStaticInit += AstType.STRING
@@ -127,6 +123,9 @@ object AstDependencyAnalyzer {
 					if (expr is AstExpr.CALL_INSTANCE) ana(expr.obj)
 					if (expr is AstExpr.CALL_SUPER) ana(expr.obj)
 					allSortedRefsStaticInit += expr.method
+				}
+				is AstExpr.CONCAT_STRING -> {
+					ana(expr.original)
 				}
 				is AstExpr.CAUGHT_EXCEPTION -> {
 					ana(expr.type)
@@ -179,10 +178,9 @@ object AstDependencyAnalyzer {
 				}
 				is AstExpr.NEW_WITH_CONSTRUCTOR -> {
 					ana(expr.target)
-					ana(expr.type)
-					ana(expr.constructor)
-					for (arg in expr.args) ana(arg)
 					allSortedRefsStaticInit += expr.target
+					for (arg in expr.args) ana(arg)
+					ana(AstExpr.CALL_STATIC(expr.constructor, expr.args.unbox, isSpecial = true))
 				}
 			//is AstExpr.REF -> ana(expr.expr)
 				is AstExpr.LITERAL_REFNAME -> {
@@ -228,12 +226,6 @@ object AstDependencyAnalyzer {
 				is AstStm.TRY_CATCH -> {
 					ana(stm.trystm);
 					ana(stm.catch)
-				}
-				is AstStm.SET_NEW_WITH_CONSTRUCTOR -> {
-					ana(stm.target)
-					ana(stm.method.type)
-					for (arg in stm.args) ana(arg)
-					allSortedRefsStaticInit += stm.method
 				}
 				is AstStm.LINE -> Unit
 				is AstStm.NOP -> Unit

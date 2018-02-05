@@ -18,6 +18,7 @@ package java.lang;
 
 import com.jtransc.annotation.*;
 import com.jtransc.annotation.haxe.HaxeAddFilesTemplate;
+import com.jtransc.annotation.haxe.HaxeAddMembers;
 import com.jtransc.annotation.haxe.HaxeAddSubtarget;
 
 import java.lang.jtransc.JTranscCoreReflection;
@@ -27,7 +28,7 @@ import java.lang.reflect.Field;
 @SuppressWarnings({"WeakerAccess", "unused"})
 @HaxeAddFilesTemplate(base = "hx", value = {
 	"hx/MyStringBuf.hx",
-	"hx/N.hx", "hx/NE.hx", "hx/Float32.hx", "hx/Float64.hx",
+	"hx/N.hx", "hx/Float32.hx", "hx/Float64.hx",
 	"hx/JA_0.hx", "hx/JA_B.hx", "hx/JA_C.hx", "hx/JA_D.hx", "hx/JA_F.hx", "hx/JA_I.hx", "hx/JA_J.hx", "hx/JA_L.hx", "hx/JA_S.hx", "hx/JA_Z.hx",
 	"hx/HaxePolyfills.hx", "hx/HaxeDynamicLoad.hx", "hx/HaxeIO.hx", "hx/HaxeNativeWrapper.hx",
 })
@@ -68,15 +69,29 @@ import java.lang.reflect.Field;
 @JTranscAddFile(target = "as3", priority = -1, process = true, src = "as3/WrappedThrowable.as", dst = "WrappedThrowable.as")
 @JTranscAddFile(target = "as3", priority = -1, process = true, src = "as3/Main.xml", dst = "Main.xml")
 @JTranscAddMembers(target = "d", value = "core.sync.mutex.Mutex __d_mutex = null;")
+@JTranscAddMembers(target = "cpp", value = "std::recursive_mutex mtx;")
+@HaxeAddMembers({
+	"#if cpp public var _hx_mutex: cpp.vm.Mutex = null; #end",
+})
 public class Object {
 	@JTranscInvisible
 	public int $$id;
 
-	public boolean equals(Object obj) {
+	@JTranscSync
+	public Object() {
+	}
+
+	@JTranscSync
+	public boolean __equalsSync__(Object obj) {
 		return (this == obj);
 	}
 
+	public boolean equals(Object obj) {
+		return __equalsSync__(obj);
+	}
+
 	// @TODO: All object could have class descriptor eg. [I
+	@JTranscSync
 	public final Class<?> getClass() {
 		if (JTranscCoreReflection.isArray(this)) {
 			return JTranscCoreReflection.getClassByName(JTranscCoreReflection.getArrayDescriptor(this));
@@ -123,31 +138,41 @@ public class Object {
 
 	private static final long SAMPLING_STEP = 50;
 	private long waitTimeout;
-	public final void notify() {
-		waitTimeout = 0;
-	}
 
-	public final void notifyAll() {
-		waitTimeout = 0;
-	}
-
+	@JTranscAsync
 	public final void wait(long timeout) throws InterruptedException {
+		wait(timeout, 0);
+	}
+
+	@JTranscAsync
+	public final void wait() throws InterruptedException {
+		wait(0L, 0);
+	}
+
+	@JTranscMethodBody(target = "js", value = "{{ AWAIT }} N.threadWait({{ JC_COMMA }}this, N.j2d(p0), p1);", async = true)
+	@JTranscAsync
+	public final void wait(long timeout, int nanos) throws InterruptedException {
 		if (timeout < 0)
 			throw new IllegalArgumentException("timeout is negative");
 		waitTimeout = timeout == 0 ? Long.MAX_VALUE : timeout;
-		while (waitTimeout > 0){
+		while (waitTimeout > 0) {
 			waitTimeout -= SAMPLING_STEP;
 			Thread.sleep(SAMPLING_STEP);
 		}
 	}
 
-	public final void wait(long timeout, int nanos) throws InterruptedException {
-		wait(timeout);
+	@JTranscMethodBody(target = "js", value = "{{ AWAIT }} N.threadNotify({{ JC_COMMA }}this);", async = true)
+	@JTranscAsync
+	public final void notify() {
+		waitTimeout = 0;
 	}
 
-	public final void wait() throws InterruptedException {
-		wait(0);
+	@JTranscMethodBody(target = "js", value = "{{ AWAIT }} N.threadNotifyAll({{ JC_COMMA }}this);", async = true)
+	@JTranscAsync
+	public final void notifyAll() {
+		waitTimeout = 0;
 	}
+
 
 	protected void finalize() throws Throwable {
 	}

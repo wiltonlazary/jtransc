@@ -1,8 +1,10 @@
 package com.jtransc.template
 
 import com.jtransc.text.captureStdout
+import com.jtransc.vfs.getResourceBytes
 import org.junit.Assert
 import org.junit.Test
+import java.io.File
 
 class MinitemplateTest {
 	@Test fun testDummy() {
@@ -19,7 +21,7 @@ class MinitemplateTest {
 	}
 
 	@Test fun testDebug() {
-		var result:String? = null
+		var result: String? = null
 		val stdout = captureStdout {
 			result = Minitemplate("a {% debug 'hello ' + name %} b")(mapOf("name" to "world"))
 		}
@@ -30,6 +32,7 @@ class MinitemplateTest {
 	@Test fun testSimpleIf() {
 		Assert.assertEquals("true", Minitemplate("{% if cond %}true{% else %}false{% end %}")(mapOf("cond" to 1)))
 		Assert.assertEquals("false", Minitemplate("{% if cond %}true{% else %}false{% end %}")(mapOf("cond" to 0)))
+		Assert.assertEquals("false", Minitemplate("{% if cond %}true{% else %}false{% end %}")(null))
 		Assert.assertEquals("true", Minitemplate("{% if cond %}true{% end %}")(mapOf("cond" to 1)))
 		Assert.assertEquals("", Minitemplate("{% if cond %}true{% end %}")(mapOf("cond" to 0)))
 	}
@@ -59,6 +62,8 @@ class MinitemplateTest {
 		Assert.assertEquals("Carlos", Minitemplate("{{ name|capitalize }}")(mapOf("name" to "caRLos")))
 		Assert.assertEquals("Carlos", Minitemplate("{{ (name)|capitalize }}")(mapOf("name" to "caRLos")))
 		Assert.assertEquals("Carlos", Minitemplate("{{ 'caRLos'|capitalize }}")(null))
+		Assert.assertEquals(" Carlos ", Minitemplate("{{ name }}")(mapOf("name" to " Carlos ")))
+		Assert.assertEquals("Carlos", Minitemplate("{{ name|trim }}")(mapOf("name" to " Carlos ")))
 	}
 
 	@Test fun testArrayLiterals() {
@@ -71,8 +76,14 @@ class MinitemplateTest {
 		Assert.assertEquals("1,2,3", Minitemplate("{% set a = [1,2,3] %}{{ a|join(',') }}")(null))
 	}
 
+	@Test fun testIfElse() {
+		Assert.assertEquals(" return true; ", Minitemplate("{% if extra.showFPS %} return {{ extra.showFPS }}; {% else %} return false; {% end %}").invoke(mapOf("extra" to mapOf("showFPS" to "true"))))
+		Assert.assertEquals(" return true; ", Minitemplate("{% if extra.showFPS %} return {{ extra.showFPS }}; {% end %}{% if !extra.showFPS %} return false; {% end %}")(mapOf("extra" to mapOf("showFPS" to "true"))))
+	}
+
 	@Test fun testAccessGetter() {
 		val success = "success!"
+
 		class Test1 {
 			val a: String get() = "$success"
 		}
@@ -81,7 +92,7 @@ class MinitemplateTest {
 	}
 
 	@Test fun testCustomTag() {
-		class CustomNode(val text:String) : Minitemplate.BlockNode {
+		class CustomNode(val text: String) : Minitemplate.BlockNode {
 			override fun eval(context: Minitemplate.Context) = Unit.apply { context.write("CUSTOM($text)") }
 		}
 
@@ -95,5 +106,29 @@ class MinitemplateTest {
 		)
 	}
 
-	data class Person(val name:String, val surname:String)
+	@Test fun testImageInfoFilter() {
+		val resourceBytes = this.javaClass.classLoader.getResourceBytes("jtransc-icon.png")
+		val tempFile = File.createTempFile("jtransc_image_info", "jtransc_image_info").apply {
+			writeBytes(resourceBytes)
+			deleteOnExit()
+		}
+
+		Assert.assertEquals("32,32,32",
+			Minitemplate("{% set image = resourceBytes|image_info %}{{ image.width }},{{ image.height }},{{ image.bitsPerPixel }}")(mapOf(
+				"resourceBytes" to resourceBytes
+			))
+		)
+		Assert.assertEquals("32,32,32",
+			Minitemplate("{% set image = resourcePath|image_info %}{{ image.width }},{{ image.height }},{{ image.bitsPerPixel }}")(mapOf(
+				"resourcePath" to tempFile.absolutePath
+			))
+		)
+		Assert.assertEquals("32,32,32",
+			Minitemplate("{% set image = resourcePath|image_info %}{{ image.width }},{{ image.height }},{{ image.bitsPerPixel }}")(mapOf(
+				"resourcePath" to tempFile
+			))
+		)
+	}
+
+	data class Person(val name: String, val surname: String)
 }

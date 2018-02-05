@@ -9,6 +9,17 @@ class N {
 	public static readonly float FloatNaN = intBitsToFloat(0x7FC00000);
 	public static readonly double DoubleNaN = longBitsToDouble(0x7FF8000000000000);
 
+	//public static readonly long MAX_INT64 = 9223372036854775807;
+	//public static readonly long MIN_INT64 = -9223372036854775808;
+	//public static readonly int MAX_INT32 = 2147483647;
+	//public static readonly int MIN_INT32 = -2147483648;
+
+	static readonly public int MIN_INT32 = unchecked((int)0x80000000);
+	static readonly public int MAX_INT32 = unchecked((int)0x7FFFFFFF);
+	static readonly public long MIN_INT64 = unchecked((long)0x8000000000000000L);
+	static readonly public long MAX_INT64 = unchecked((long)0x7FFFFFFFFFFFFFFFL);
+
+
 	//static public TOut CHECK_CAST<TOut, TIn>(TIn i) where TIn : class where TOut : class {
 	//	if (i == null) return null;
 	//	if (!(i is TOut)) {
@@ -37,12 +48,6 @@ class N {
 	static public int iushr(int l, int r) {
 		return (int)(((uint)l) >> r);
 	}
-
-	//static public int MIN_INT32 = Int32.MinValue;
-	static readonly public int MIN_INT32 = unchecked((int)0x80000000);
-	static readonly public int MAX_INT32 = unchecked((int)0x7FFFFFFF);
-	static readonly public long MIN_INT64 = unchecked((long)0x8000000000000000L);
-	static readonly public long MAX_INT64 = unchecked((long)0x7FFFFFFFFFFFFFFFL);
 
 	static public void init() {
 		//Console.WriteLine(Console.OutputEncoding.CodePage);
@@ -91,9 +96,53 @@ class N {
 
 	static public int z2i(bool v) { return v ? 1 : 0; }
 	static public int j2i(long v) { return (int)v; }
-	static public long d2j(double v) { return (long)v; }
+	static public long d2j(double v) {
+		if (Double.IsNaN(v)) {
+			return 0;
+		} else if (!Double.IsInfinity(v)) {
+			return (long)v;
+		} else if (v >= 0) {
+			return MAX_INT64;
+		} else {
+			return MIN_INT64;
+		}
+	}
 	static public long i2j(int v) { return (long)v; }
-	static public long f2j(float v) { return (long)v; }
+	static public long f2j(float v) {
+		if (Single.IsNaN(v)) {
+			return 0;
+		} else if (!Single.IsInfinity(v)) {
+			return (long)v;
+		} else if (v >= 0) {
+			return MAX_INT64;
+		} else {
+			return MIN_INT64;
+		}
+	}
+
+	static public int f2i(float v) {
+		if (Single.IsNaN(v)) {
+			return 0;
+		} else if (!Single.IsInfinity(v)) {
+			return (int)v;
+		} else if (v >= 0) {
+			return MAX_INT32;
+		} else {
+			return MIN_INT32;
+		}
+	}
+
+	static public int d2i(double v) {
+		if (Double.IsNaN(v)) {
+			return 0;
+		} else if (!Double.IsInfinity(v)) {
+			return (int)v;
+		} else if (v >= 0) {
+			return MAX_INT32;
+		} else {
+			return MIN_INT32;
+		}
+	}
 
 	static public long lneg (long l) { return -l; }
 	static public long linv (long l) { return ~l; }
@@ -250,6 +299,14 @@ class JA_F : JA_Template<float>  { public JA_F(float[]  data, string desc = "[F"
 class JA_D : JA_Template<double> { public JA_D(double[] data, string desc = "[D") : base(data, desc) { } public JA_D(int size, string desc = "[D") : base(size, desc) { } }
 class JA_L : JA_Template<{% CLASS java.lang.Object %}> {
 	public JA_L({% CLASS java.lang.Object %}[] data, string desc) : base(data, desc) { } public JA_L(int size, string desc) : base(size, desc) { }
+
+	static public JA_L fromArray(string desc, {% CLASS java.lang.Object %}[] data) { return new JA_L(data, desc); }
+	static public JA_L T0(string desc) { return new JA_L(new {% CLASS java.lang.Object %}[]{}, desc); }
+	static public JA_L T1(string desc, {% CLASS java.lang.Object %} a) { return new JA_L(new[]{ a }, desc); }
+	static public JA_L T2(string desc, {% CLASS java.lang.Object %} a, {% CLASS java.lang.Object %} b) { return new JA_L(new[]{ a, b }, desc); }
+	static public JA_L T3(string desc, {% CLASS java.lang.Object %} a, {% CLASS java.lang.Object %} b, {% CLASS java.lang.Object %} c) { return new JA_L(new[]{ a, b, c }, desc); }
+	static public JA_L T4(string desc, {% CLASS java.lang.Object %} a, {% CLASS java.lang.Object %} b, {% CLASS java.lang.Object %} c, {% CLASS java.lang.Object %} d) { return new JA_L(new[]{ a, b, c, d }, desc); }
+
 	static public JA_0 createMultiSure(string desc, params int[] sizes) {
 		return _createMultiSure(desc, 0, sizes);
 	}

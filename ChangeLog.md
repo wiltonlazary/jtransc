@@ -1,5 +1,124 @@
 # CHANGELOG
 
+## 0.6.8 (2018-01-14)
+
+New features:
+- ALL: Improved generated code (now new + constructor is joined), this also improves calling native code and fixes #134
+- JS: String concatenation (new ArrayBuilder+append+toString chain) is now optimized (less code and better performance)
+- HAXE-CPP: Support Haxe-Cpp synchronized blocks
+- JS: Support Threads in JS using await/async (disabled by default because of performance impact)
+- JS: Now targets to ES6 with classes since it is mainstream already
+- Implement Object.wait/notify/notifyAll + Semaphore using Object facilities
+- ALL: Added JTranscTargetClassImpl to remap a class depending on the target (similar to ServiceLoader approach but simpler)
+
+Fixes:
+- Gradle: Fixed newer gradle versions that output different language classes in different directories.
+- Fixed order of Side effects in several cases in D and C++ targets
+
+Improvements:
+- Thread improvements in all targets
+
+Performance Improvements:
+- @SergeyLabutin Reflection Cache
+
+Misc:
+- @SergeyLabutin Support lime.net.HTTPRequest
+- @SergeyLabutin Missing ScheduledThreadPoolExecutor.submit
+- @SergeyLabutin Updated lime to 5.4.0
+- Updated Kotlin to 1.2.10
+- Updated Gradle to 4.4.1
+- Update plugin-publish-plugin to 0.9.9
+
+## 0.6.7 (2017-08-13)
+
+New features:
+- @Intrigus Add almost complete jni implementation for cpp target 
+- @fxjshm: Added synchronized function support (except Haxe target for now)
+- @fxjshm: Support mutex in C++ target
+- Added support for `Runtime.addShutdownHook()` to JS target
+- Added `javax.sound.sampled` stub classes
+- Added tons of `java.nio` stub classes
+- Added `java.awt.Desktop` stub class
+- Added `java.util.Optional`
+- Added most `java.util.functional.*` interfaces
+- Added `java.net.ServerSocket` stub class
+- Added and implemented lots of `java.time` classes
+
+Improvements:
+- @SergeyLabutin: Split reflection information in several methods
+- @SergeyLabutin: Thread improvements
+- Implemented `String.format("%.f")` support with Locale support
+- Honor `cond` in `JTranscAddLibraries`, `JTranscAddIncludes`, `JTranscAddDefines`, `JTranscAddImports`
+
+Fixes:
+- @intrigus: Compile Bdwgc lib statically instead of dynamically
+- Fixed System.arraycopy undefined behaviour on overlapping
+- Make more compatible `d2i` and `f2i` opcodes for float and double to int conversions in NaN, -Inf and +Inf
+
+Misc:
+- Moved each language test to its own project. Added jtransc-gen-common-tests
+- Added codecov + jacoco to test coverage
+- Make haxelib quiet to reduce log output in travis
+- Updated gradle to 4.0.2
+- Disabled C# tests on travis for now
+- Updated travis to Ubuntu Trusty
+- haxelib --always
+- @SergeyLabutin: Updated lime to 5.3.0
+
+## 0.6.6 (2017-07-23)
+
+- @SergeyLabutin: Implemented Runtime.memory methods for Haxe+Cpp target
+- @SergeyLabutin: Fix JTranscBits.read int64
+- @SergeyLabutin: Fix DataInputStream.readUTF and DataOutputStream.writeUTF using modified utf-8
+- Implemented array literals in all languages
+- Split reflection getFieldAnnotations per class
+- @fxjshm: Fix boolean literals on C#
+- Added jtransc.optimize option to gradle and tests to disable optimizations
+- Disabled variable inlining optimization for now since it caused some spurious bugs
+- @fxjshm: Added AppVeyor CI support for testing on a Windows machine
+
+## 0.6.5 (2017-07-07)
+
+Improvements:
+- [HAXE] [HAXE-CPP] Greatly improved performance of System.arraycopy and System.fill
+- [HAXE-CPP] Improved performance of Object[] arrays
+- [CPP] Improved performance of fill for 64-bit types (long and double) in 32-bit builds
+
+Fixes:
+- [TEMPLATES] Fixed if+else minitemplates
+
+Missing API:
+- @fxjshm: Added UnsupportedClassVersionError
+
+Misc:
+- [HAXE-CPP] Enabled travis-ci automated testing for haxe-cpp target
+- @SergeyLabutin Documentation for Android Target in readme
+- Updated Kotlin to 1.1.3-2
+- Added JTRANSC_OS to templates
+- Added `|image_info` minitemplate filter to get width and height from images from a byte array, File or String path
+
+## 0.6.4 (2017-07-01)
+
+New features:
+- [ALL] Plugins are now able to process classes after applied features
+- [ALL] @SergeyLabutin Added additional missing settings to CommonGenerator
+
+Fixes:
+- [CPP] Fixed float REM opcode on C++
+- [ALL] Fixed INVOKE_DYNAMIC_METHOD with additional expressions + optimizer (problems with inner lambdas)
+- [GRADLE] Fixes gradle `appendVar` when no annotation was provided already
+
+Improvements:
+- [JS] Now compiler strips .0 trailings on double literals to reduce output size
+
+Cleanups:
+- [ALL] Unified body features on all targets
+- [CPP] Removed ClassLoader C++ specialized code. Since this is not going to work at least with the current reflection library.
+
+Misc:
+- [HAXE] Updated lime to 0.5.1
+- [ALL] Updated to kotlin 1.1.3
+
 ## 0.6.3 (2017-06-11)
 
 New features:

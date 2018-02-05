@@ -52,6 +52,7 @@ class PhpTarget : GenTargetDescriptor() {
 
 @Singleton
 class PhpGenerator(injector: Injector) : CommonGenerator(injector) {
+	override val TARGET_NAME: String = "PHP"
 	override val SINGLE_FILE: Boolean = true
 
 	//class DGenerator(injector: Injector) : FilePerClassCommonGenerator(injector) {
@@ -171,7 +172,7 @@ class PhpGenerator(injector: Injector) : CommonGenerator(injector) {
 	override fun N_i2b(str: String) = "(N::i2b($str))"
 	override fun N_i2c(str: String) = "(N::i2c($str))"
 	override fun N_i2s(str: String) = "(N::i2s($str))"
-	override fun N_f2i(str: String) = "(($str)|0)"
+	override fun N_f2i(str: String) = "(N::f2i($str))"
 
 	//fun String?.dquote(): String = if (this != null) "\"${this.escape()}\"" else "null"
 
@@ -322,7 +323,7 @@ class PhpGenerator(injector: Injector) : CommonGenerator(injector) {
 	//override fun N_i(str: String) = "(($str)|0)"
 	override fun N_i(str: String) = "((int)($str))"
 
-	override fun N_d2i(str: String) = N_i(str)
+	override fun N_d2i(str: String) = "N::d2i($str)"
 
 	override fun N_c_eq(l: String, r: String) = "($l == $r)"
 	override fun N_c_ne(l: String, r: String) = "($l != $r)"
@@ -429,7 +430,7 @@ class PhpGenerator(injector: Injector) : CommonGenerator(injector) {
 	//	else -> super.escapedConstant(v)
 	//}
 
-	override fun genExprCallBaseSuper(e2: AstExpr.CALL_SUPER, clazz: AstType.REF, refMethodClass: AstClass, method: AstMethodRef, methodAccess: String, args: List<String>): String {
+	override fun genExprCallBaseSuper(e2: AstExpr.CALL_SUPER, clazz: AstType.REF, refMethodClass: AstClass, method: AstMethodRef, methodAccess: String, args: List<String>, isNativeCall: Boolean): String {
 		val methodName = getTargetMethodAccess(program[method]!!, static = true)
 		return "parent$methodName(${args.joinToString(", ")})"
 	}

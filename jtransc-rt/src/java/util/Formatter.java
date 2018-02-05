@@ -2,28 +2,32 @@ package java.util;
 
 import com.jtransc.JTranscSystem;
 import com.jtransc.internal.JTranscCType;
+import com.jtransc.text.JTranscLocale;
+import com.jtransc.util.JTranscStrings;
 
 import java.io.*;
 import java.nio.charset.Charset;
 
 public class Formatter implements Closeable, Flushable {
-	Appendable out;
-	IOException ioException;
-
-	public Formatter() {
-		this.out = new StringBuilder();
-	}
-
-	public Formatter(Appendable a) {
-		this.out = a;
-	}
-
-	public Formatter(Locale l) {
-		this.out = new StringBuilder();
-	}
+	private final Appendable out;
+	private IOException ioException;
+	private final Locale l;
 
 	public Formatter(Appendable a, Locale l) {
 		this.out = a;
+		this.l = l;
+	}
+
+	public Formatter() {
+		this(new StringBuilder(), Locale.getDefault());
+	}
+
+	public Formatter(Appendable a) {
+		this(a, Locale.getDefault());
+	}
+
+	public Formatter(Locale l) {
+		this(new StringBuilder(), l);
 	}
 
 	public Formatter(String fileName) throws FileNotFoundException {
@@ -43,15 +47,15 @@ public class Formatter implements Closeable, Flushable {
 	}
 
 	public Formatter(File file, String csn) throws FileNotFoundException, UnsupportedEncodingException {
-		out = new BufferedWriter(new OutputStreamWriter(new FileOutputStream(file), csn));
+		this(new BufferedWriter(new OutputStreamWriter(new FileOutputStream(file), csn)));
 	}
 
 	public Formatter(File file, String csn, Locale l) throws FileNotFoundException, UnsupportedEncodingException {
-		this(file, csn);
+		this(new BufferedWriter(new OutputStreamWriter(new FileOutputStream(file), csn)), l);
 	}
 
 	public Formatter(OutputStream os) {
-		out = new BufferedWriter(new OutputStreamWriter(os, Charset.defaultCharset()));
+		this(new BufferedWriter(new OutputStreamWriter(os, Charset.defaultCharset())));
 	}
 
 	public Formatter(OutputStream os, String csn) throws UnsupportedEncodingException {
@@ -59,11 +63,11 @@ public class Formatter implements Closeable, Flushable {
 	}
 
 	public Formatter(OutputStream os, String csn, Locale l) throws UnsupportedEncodingException {
-		out = new BufferedWriter(new OutputStreamWriter(os, csn));
+		this(new BufferedWriter(new OutputStreamWriter(os, csn)));
 	}
 
 	public Formatter(PrintStream ps) {
-		out = ps;
+		this(ps, Locale.getDefault());
 	}
 
 	@Override
@@ -126,7 +130,9 @@ public class Formatter implements Closeable, Flushable {
 				char pad = ' ';
 				int step = 0;
 				boolean right = false;
+				boolean readingDecimals = false;
 				int width = 0;
+				int decimalWidth = 0;
 				while (true) {
 					char cc = format.charAt(n++);
 					if (cc == '%') {
@@ -138,13 +144,20 @@ public class Formatter implements Closeable, Flushable {
 						pad = '0';
 						step = 1;
 					} else if (cc >= '0' && cc <= '9') {
-						width *= 10;
-						width += JTranscCType.decodeDigit(cc);
+						if (readingDecimals) {
+							decimalWidth *= 10;
+							decimalWidth += JTranscCType.decodeDigit(cc);
+						} else {
+							width *= 10;
+							width += JTranscCType.decodeDigit(cc);
+						}
+					} else if (cc == '.') {
+						readingDecimals = true;
 					} else if (cc == 'n') { // %n == \n, \r\n, or \r
 						out.append(JTranscSystem.lineSeparator());
 						break;
 					} else {
-						out.append(formatValue(right, width, pad, cc, args[argn++]));
+						out.append(formatValue(right, width, decimalWidth, pad, cc, args[argn++]));
 						break;
 					}
 				}
@@ -154,32 +167,61 @@ public class Formatter implements Closeable, Flushable {
 		}
 	}
 
-	private String formatValue(boolean right, int width, char pad, char c, Object value) {
-		String out;
+	private String doNormalPad(String str, boolean right, int width, char pad) {
+		if (width <= 0) return str;
+		while (str.length() < width) {
+			if (right) {
+				str = "" + str + pad;
+			} else {
+				str = "" + pad + str;
+			}
+		}
+		return str;
+	}
+
+	private String doDecimalPad(String str, int width) {
+		if (str.length() > width) {
+			return str.substring(0, width);
+		} else {
+			StringBuilder out = new StringBuilder(str);
+			while (out.length() < width) out.append('0');
+			return out.toString();
+		}
+	}
+
+	private String formatValue(boolean right, int width, int decimalWidth, char pad, char c, Object value) {
 		switch (c) {
 			case 'x':
-			case 'X':
+			case 'X': {
+				String out;
 				if (value instanceof Long) {
 					out = "" + Long.toUnsignedString((Long) value, 16);
 				} else {
 					out = "" + Integer.toUnsignedString((Integer) value, 16);
 				}
 				if (c == 'X') out = out.toUpperCase();
-				break;
-			default:
-				out = "" + value;
-				break;
-		}
-		if (width > 0) {
-			while (out.length() < width) {
-				if (right) {
-					out = "" + out + pad;
+				return doNormalPad(out, right, width, pad);
+			}
+			case 'f': {
+				final double v = ((Number) value).doubleValue();
+				String[] parts = JTranscStrings.split(String.valueOf(v), '.');
+				if (parts.length <= 0) {
+					return "";
+				} else if (parts.length <= 1) {
+					return parts[0];
 				} else {
-					out = "" + pad + out;
+					String integral = doNormalPad(parts[0], right, width, pad);
+					String decimal = doDecimalPad(parts[1], decimalWidth);
+					if (decimal.length() == 0) {
+						return integral;
+					} else {
+						return integral + JTranscLocale.getDecimalSeparator(l) + decimal;
+					}
 				}
 			}
+			default:
+				return doNormalPad(String.valueOf(value), right, width, pad);
 		}
-		return out;
 	}
 
 	public String toString() {

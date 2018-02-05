@@ -2,9 +2,6 @@ apply from: '../includeCommon.gradle'
 apply from: '../include.gradle'
 apply plugin: 'idea'
 
-sourceCompatibility = 1.8
-targetCompatibility = 1.8
-
 evaluationDependsOn(':jtransc-rt')
 
 dependencies {
@@ -28,6 +25,7 @@ dependencies {
 	//providedCompile project(':jtransc-rt') // Needs to be provided so it doesn't include at runtime
 	testCompile project(":jtransc-rt-core-kotlin")
 	testCompile project(":jtransc-rt-extended-charsets")
+	testCompile project(':jtransc-gen-common-tests')
 }
 
 idea {

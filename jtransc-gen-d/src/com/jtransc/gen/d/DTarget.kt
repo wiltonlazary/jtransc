@@ -6,6 +6,7 @@ import com.jtransc.JTranscSystem
 import com.jtransc.ast.*
 import com.jtransc.ast.feature.method.GotosFeature
 import com.jtransc.ast.feature.method.SwitchFeature
+import com.jtransc.ast.feature.method.UndeterministicParameterEvaluationFeature
 import com.jtransc.error.invalidOp
 import com.jtransc.gen.GenTargetDescriptor
 import com.jtransc.gen.TargetBuildTarget
@@ -13,10 +14,7 @@ import com.jtransc.gen.common.*
 import com.jtransc.injector.Injector
 import com.jtransc.injector.Singleton
 import com.jtransc.io.ProcessResult2
-import com.jtransc.text.Indenter
-import com.jtransc.text.Indenter.Companion
-import com.jtransc.text.escape
-import com.jtransc.text.quote
+import com.jtransc.text.*
 import com.jtransc.vfs.*
 import java.io.File
 
@@ -56,11 +54,12 @@ class DTarget : GenTargetDescriptor() {
 
 @Singleton
 class DGenerator(injector: Injector) : CommonGenerator(injector) {
+	override val TARGET_NAME: String = "DLANG"
 	override val SINGLE_FILE: Boolean = true
 
 	//class DGenerator(injector: Injector) : FilePerClassCommonGenerator(injector) {
-	override val methodFeatures = setOf(SwitchFeature::class.java, GotosFeature::class.java)
-	override val methodFeaturesWithTraps = setOf(SwitchFeature::class.java)
+	override val methodFeaturesWithTraps = setOf(SwitchFeature::class.java, UndeterministicParameterEvaluationFeature::class.java) // Undeterministic is required on windows!?
+	override val methodFeatures = (methodFeaturesWithTraps + listOf(GotosFeature::class.java)).toSet()
 	override val stringPoolType: StringPool.Type = StringPool.Type.GLOBAL
 	override val floatHasFSuffix: Boolean = true
 
@@ -154,7 +153,26 @@ class DGenerator(injector: Injector) : CommonGenerator(injector) {
 		}
 	}
 
-	fun String?.dquote(): String = if (this != null) "\"${this.escape()}\"w" else "null"
+	fun String?.dquote(): String {
+		if (this == null) return "null"
+		return "[" + this.map { it.toInt() }.joinToString(",") + "]"
+		/*
+		val out = StringBuilder()
+		for (n in 0 until this.length) {
+			val c = this[n]
+			when (c) {
+				'\\' -> out.append("\\\\")
+				'"' -> out.append("\\\"")
+				'\n' -> out.append("\\n")
+				'\r' -> out.append("\\r")
+				'\t' -> out.append("\\t")
+				in '\u0000'..'\u001f', in '\u007f'..'\uffff' -> out.append("\\u" + "%04x".format(c.toInt()))
+				else -> out.append(c)
+			}
+		}
+		return "\"" + out.toString() + "\""
+		*/
+	}
 
 	override fun genClassBodyMethods(clazz: AstClass, kind: MemberTypes): Indenter = Indenter {
 		val directMethods = clazz.methods
@@ -177,7 +195,7 @@ class DGenerator(injector: Injector) : CommonGenerator(injector) {
 		//	//return "pragma(inline, true)" + super.genMethodDeclModifiers(method)
 		//	return "pragma(inline) final " + super.genMethodDeclModifiers(method)
 		//} else {
-			return super.genMethodDeclModifiers(method)
+		return super.genMethodDeclModifiers(method)
 		//}
 	}
 
@@ -210,7 +228,7 @@ class DGenerator(injector: Injector) : CommonGenerator(injector) {
 
 	override val FqName.targetSimpleName: String get() = this.targetName
 
-	override fun N_c(str: String, from: AstType, to: AstType):String {
+	override fun N_c(str: String, from: AstType, to: AstType): String {
 		//if (str == "this") return "this"
 		//if (to is AstType.REF && to.fqname == "java.lang.Object" && from is AstType.Reference) return str
 
@@ -257,8 +275,8 @@ class DGenerator(injector: Injector) : CommonGenerator(injector) {
 	//override fun N_i(str: String) = "(cast(int)($str))"
 	override fun N_i(str: String) = "($str)"
 
-	override fun N_f2i(str: String) = "(cast(int)($str))"
-	override fun N_d2i(str: String) = "(cast(int)($str))"
+	override fun N_f2i(str: String) = "N.f2i($str)"
+	override fun N_d2i(str: String) = "N.d2i($str)"
 	override fun N_c_eq(l: String, r: String) = "($l is $r)"
 	override fun N_c_ne(l: String, r: String) = "($l !is $r)"
 
@@ -312,7 +330,7 @@ class DGenerator(injector: Injector) : CommonGenerator(injector) {
 	override val DoublePositiveInfinityString = "double.infinity"
 	override val DoubleNanString = "double.nan"
 
-	override val String.escapeString: String get() = "STRINGLIT_${allocString(currentClass, this)}"
+	override val String.escapeString: String get() = "STRINGLIT_${allocString(currentClass, this)}${this.toCommentString()}"
 
 	override fun AstExpr.genNotNull(): String {
 		if (debugVersion) {
@@ -341,14 +359,21 @@ class DGenerator(injector: Injector) : CommonGenerator(injector) {
 	override fun genStmMonitorEnter(stm: AstStm.MONITOR_ENTER) = indent {
 		line("N.monitorEnter(" + stm.expr.genExpr() + ");")
 	}
+
 	override fun genStmMonitorExit(stm: AstStm.MONITOR_EXIT) = indent {
 		line("N.monitorExit(" + stm.expr.genExpr() + ");")
 	}
 
 	override fun buildStaticInit(clazzName: FqName): String? = null
 
-	override fun N_AGET_T(arrayType: AstType.ARRAY, elementType: AstType, array: String, index: String) = "$array.data[$index]"
-	override fun N_ASET_T(arrayType: AstType.ARRAY, elementType: AstType, array: String, index: String, value: String): String = "$array.data[$index] = $value;"
+	//override fun N_AGET_T(arrayType: AstType.ARRAY, elementType: AstType, array: String, index: String) = "$array.data[$index]"
+	//override fun N_ASET_T(arrayType: AstType.ARRAY, elementType: AstType, array: String, index: String, value: String): String = "$array.data[$index] = $value;"
+
+	//override fun N_AGET_T(arrayType: AstType.ARRAY, elementType: AstType, array: String, index: String) = "$array.get($index)"
+	//override fun N_ASET_T(arrayType: AstType.ARRAY, elementType: AstType, array: String, index: String, value: String): String = "$array.set($index, $value);"
+
+	override fun N_AGET_T(arrayType: AstType.ARRAY, elementType: AstType, array: String, index: String) = "ARRAY_GET($array, $index)"
+	override fun N_ASET_T(arrayType: AstType.ARRAY, elementType: AstType, array: String, index: String, value: String): String = "ARRAY_SET($array, $index, $value);"
 
 	override fun genExprCaughtException(e: AstExpr.CAUGHT_EXCEPTION): String = "cast(${e.type.targetName})J__exception__"
 

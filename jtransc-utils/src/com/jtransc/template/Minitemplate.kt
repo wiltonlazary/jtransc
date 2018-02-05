@@ -2,6 +2,8 @@ package com.jtransc.template
 
 import com.jtransc.ds.ListReader
 import com.jtransc.error.invalidOp
+import com.jtransc.imaging.ImagePropsDecoder
+import com.jtransc.json.Json
 import com.jtransc.lang.Dynamic
 import com.jtransc.text.*
 import java.io.File
@@ -22,8 +24,20 @@ class Minitemplate(val template: String, val config: Config = Config()) {
 			Filter("trim") { subject, args -> Dynamic.toString(subject).trim() },
 			Filter("quote") { subject, args -> Dynamic.toString(subject).quote() },
 			Filter("escape") { subject, args -> Dynamic.toString(subject).escape() },
+			Filter("json") { subject, args -> Json.encodeAny(subject) },
 			Filter("join") { subject, args -> Dynamic.toIterable(subject).map { Dynamic.toString(it) }.joinToString(Dynamic.toString(args[0])) },
-			Filter("file_exists") { subject, args -> File(Dynamic.toString(subject)).exists() }
+			Filter("file_exists") { subject, args -> File(Dynamic.toString(subject)).exists() },
+			Filter("image_info") { subject, args ->
+				if (subject is ByteArray) {
+					ImagePropsDecoder.tryDecodeHeader(subject)
+				} else {
+					val file = when (subject) {
+						is File -> subject
+						else -> File(Dynamic.toString(subject))
+					}
+					ImagePropsDecoder.tryDecodeHeader(file)
+				}
+			}
 		)
 
 		private val allTags = listOf(Tag.EMPTY, Tag.IF, Tag.FOR, Tag.SET, Tag.DEBUG) + extraTags
@@ -380,31 +394,32 @@ class Minitemplate(val template: String, val config: Config = Config()) {
 				fun handle(tag: Tag, token: Token.TTag): BlockNode {
 					val parts = arrayListOf<TagPart>()
 					var currentToken = token
-					val children = arrayListOf<BlockNode>()
+					val mutableChildren = arrayListOf<BlockNode>()
 
 					fun emitPart() {
-						parts += TagPart(currentToken, BlockNode.group(children))
+						val clonedChildren = mutableChildren.toList()
+						parts += TagPart(currentToken, BlockNode.group(clonedChildren))
 					}
 
 					loop@ while (!tr.eof) {
 						val it = tr.read()
 						when (it) {
-							is Token.TLiteral -> children += BlockNode.TEXT(it.content)
-							is Token.TExpr -> children += BlockNode.EXPR(ExprNode.parse(it.content))
+							is Token.TLiteral -> mutableChildren += BlockNode.TEXT(it.content)
+							is Token.TExpr -> mutableChildren += BlockNode.EXPR(ExprNode.parse(it.content))
 							is Token.TTag -> {
 								when (it.name) {
 									tag.end -> break@loop
 									in tag.nextList -> {
 										emitPart()
 										currentToken = it
-										children.clear()
+										mutableChildren.clear()
 									}
 									else -> {
 										val newtag = config.tags[it.name] ?: invalidOp("Can't find tag ${it.name}")
 										if (newtag.end != null) {
-											children += handle(newtag, it)
+											mutableChildren += handle(newtag, it)
 										} else {
-											children += newtag.buildNode(listOf(TagPart(it, BlockNode.TEXT(""))))
+											mutableChildren += newtag.buildNode(listOf(TagPart(it, BlockNode.TEXT(""))))
 										}
 									}
 								}

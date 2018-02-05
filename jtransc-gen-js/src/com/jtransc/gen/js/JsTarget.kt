@@ -7,6 +7,7 @@ import com.jtransc.ast.*
 import com.jtransc.ast.feature.method.SwitchFeature
 import com.jtransc.ds.Allocator
 import com.jtransc.ds.getOrPut2
+import com.jtransc.error.InvalidOperationException
 import com.jtransc.error.invalidOp
 import com.jtransc.gen.GenTargetDescriptor
 import com.jtransc.gen.TargetBuildTarget
@@ -17,7 +18,6 @@ import com.jtransc.io.ProcessResult2
 import com.jtransc.log.log
 import com.jtransc.sourcemaps.Sourcemaps
 import com.jtransc.text.Indenter
-import com.jtransc.text.Indenter.Companion
 import com.jtransc.text.isLetterDigitOrUnderscore
 import com.jtransc.text.quote
 import com.jtransc.vfs.ExecOptions
@@ -27,7 +27,7 @@ import com.jtransc.vfs.SyncVfsFile
 import java.io.File
 import java.util.*
 
-class JsTarget() : GenTargetDescriptor() {
+class JsTarget : GenTargetDescriptor() {
 	override val priority = 500
 	override val name = "js"
 	override val longName = "Javascript"
@@ -67,6 +67,7 @@ fun hasSpecialChars(name: String): Boolean = !name.all(Char::isLetterDigitOrUnde
 @Suppress("ConvertLambdaToReference")
 @Singleton
 class JsGenerator(injector: Injector) : CommonGenerator(injector) {
+	override val TARGET_NAME: String = "JS"
 	override val SINGLE_FILE: Boolean = true
 	override val ADD_UTF8_BOM = true
 	override val GENERATE_LINE_NUMBERS = false
@@ -78,9 +79,30 @@ class JsGenerator(injector: Injector) : CommonGenerator(injector) {
 
 	override val optionalDoubleDummyDecimals = true
 
+	//val IS_ASYNC = false
+	val IS_ASYNC = extraParams["js_enable_async"]?.toBoolean() ?: false
+
+	val IS_JC = IS_ASYNC
+
+	val ASYNC = if (IS_ASYNC) "async " else ""
+	val AWAIT = if (IS_ASYNC) "await" else ""
+	val JC = if (IS_JC) "_jc" else ""
+	val JC_COMMA = if (IS_JC) "_jc, " else ""
+	val JC_LIST = if (IS_JC) listOf("_jc") else listOf()
+
+	override val targetExtraParams = mapOf<String, Any?>(
+		"IS_ASYNC" to IS_ASYNC,
+		"IS_JC" to IS_JC,
+		"JC" to JC,
+		"JC_COMMA" to JC_COMMA,
+		"AWAIT" to AWAIT,
+		"ASYNC" to ASYNC
+	)
+
 	override fun compileAndRun(redirect: Boolean): ProcessResult2 = _compileRun(run = true, redirect = redirect)
 	override fun compile(): ProcessResult2 = _compileRun(run = false, redirect = false)
 
+	private fun commonAccessBase(name: String, field: Boolean): String = if (hasSpecialChars(name)) name.quote() else name
 	private fun commonAccess(name: String, field: Boolean): String = if (hasSpecialChars(name)) "[${name.quote()}]" else ".$name"
 	override fun staticAccess(name: String, field: Boolean): String = commonAccess(name, field)
 	override fun instanceAccess(name: String, field: Boolean): String = commonAccess(name, field)
@@ -158,23 +180,31 @@ class JsGenerator(injector: Injector) : CommonGenerator(injector) {
 			for (indent in classesIndenter) line(indent)
 			val mainClassClass = program[mainClassFq]
 
-			line("__createJavaArrays();")
-			line("__buildStrings();")
-			line("N.linit();")
-			line(genStaticConstructorsSorted())
-			//line(buildStaticInit(mainClassFq))
-			val mainMethod2 = mainClassClass[AstMethodRef(mainClassFq, "main", AstType.METHOD(AstType.VOID, listOf(ARRAY(AstType.STRING))))]
-			val mainCall = buildMethod(mainMethod2, static = true)
-			line("try {")
-			indent {
-				line("$mainCall(N.strArray(N.args()));")
+			line("${ASYNC}function __main()") {
+				line("var _jc = { threadId: 0, global: {} };") // JTransc Context (we can implement threads here)
+				line("$AWAIT __createJavaArrays();")
+				line("$AWAIT __buildStrings();")
+				line("$AWAIT N.preInit($JC);")
+				line(genStaticConstructorsSorted())
+				//line(buildStaticInit(mainClassFq))
+				val mainMethod2 = mainClassClass[AstMethodRef(mainClassFq, "main", AstType.METHOD(AstType.VOID, listOf(ARRAY(AstType.STRING))))]
+				val mainCall = buildMethod(mainMethod2, static = true)
+				line("try {")
+				indent {
+					line("$AWAIT N.afterInit($JC);")
+					line("$AWAIT $mainCall(${JC_COMMA}N.strArray(N.args()));")
+				}
+				line("} catch (e) {")
+				indent {
+					line("console.error(e);")
+					line("console.error(e.stack);")
+				}
+				line("}")
 			}
-			line("} catch (e) {")
-			indent {
-				line("console.error(e);")
-				line("console.error(e.stack);")
+			line("let result = __main();")
+			if (IS_ASYNC) {
+				line("result.catch((e) => { console.error(e); });")
 			}
-			line("}")
 			line(concatFilesTrans.append)
 		}
 
@@ -201,6 +231,10 @@ class JsGenerator(injector: Injector) : CommonGenerator(injector) {
 		if (sourceMap != null) output[outputFileBaseName + ".map"] = sourceMap
 
 		injector.mapInstance(ConfigJavascriptOutput(output[outputFile]))
+	}
+
+	override fun genSICall(it: AstClass): String {
+		return "$AWAIT " + "${it.name.targetNameForStatic}" + access("SI", static = true, field = false) + "($JC);"
 	}
 
 	override fun genStmTryCatch(stm: AstStm.TRY_CATCH) = indent {
@@ -230,8 +264,21 @@ class JsGenerator(injector: Injector) : CommonGenerator(injector) {
 		line(buildStaticInit(clazzRef.name))
 	}
 
-	override fun N_AGET_T(arrayType: AstType.ARRAY, elementType: AstType, array: String, index: String) = "($array.data[$index])"
-	override fun N_ASET_T(arrayType: AstType.ARRAY, elementType: AstType, array: String, index: String, value: String) = "$array.data[$index] = $value;"
+	override fun N_AGET_T(arrayType: AstType.ARRAY, elementType: AstType, array: String, index: String): String {
+		return if (debugVersion) {
+			"($array.get($index))"
+		} else {
+			"($array.data[$index])"
+		}
+	}
+
+	override fun N_ASET_T(arrayType: AstType.ARRAY, elementType: AstType, array: String, index: String, value: String): String {
+		return if (debugVersion) {
+			"$array.set($index, $value);"
+		} else {
+			"$array.data[$index] = $value;"
+		}
+	}
 
 	override fun N_is(a: String, b: AstType.Reference): String {
 		return when (b) {
@@ -249,6 +296,20 @@ class JsGenerator(injector: Injector) : CommonGenerator(injector) {
 		}
 	}
 
+	override fun N_func(name: String, args: String): String {
+		val base = "N$staticAccessOperator$name($args)"
+		return when (name) {
+			"resolveClass",
+			"box",
+			"boxVoid", "boxBool", "boxByte", "boxShort", "boxChar",
+			"boxInt", "boxLong", "boxFloat", "boxDouble", "boxString", "boxWrapped"
+			-> "N.$name($JC_COMMA$args)"
+		//"resolveClass", "iteratorToArray", "imap" -> "(await($base))"
+			"iteratorToArray", "imap" -> "($AWAIT($JC_COMMA$base))"
+			else -> base
+		}
+	}
+
 	override fun N_is(a: String, b: String) = "N.is($a, $b)"
 	override fun N_z2i(str: String) = "N.z2i($str)"
 	override fun N_i(str: String) = "(($str)|0)"
@@ -256,7 +317,7 @@ class JsGenerator(injector: Injector) : CommonGenerator(injector) {
 	override fun N_i2b(str: String) = "(($str)<<24>>24)" // shifts use 32-bit integers
 	override fun N_i2c(str: String) = "(($str)&0xFFFF)"
 	override fun N_i2s(str: String) = "(($str)<<16>>16)" // shifts use 32-bit integers
-	override fun N_f2i(str: String) = "(($str)|0)"
+	override fun N_f2i(str: String) = "N.f2i($str)"
 	override fun N_i2i(str: String) = N_i(str)
 	override fun N_i2j(str: String) = "N.i2j($str)"
 	override fun N_i2f(str: String) = "Math.fround(+($str))"
@@ -264,7 +325,7 @@ class JsGenerator(injector: Injector) : CommonGenerator(injector) {
 	override fun N_f2f(str: String) = "Math.fround($str)"
 	override fun N_f2d(str: String) = "($str)"
 	override fun N_d2f(str: String) = "Math.fround(+($str))"
-	override fun N_d2i(str: String) = "(($str)|0)"
+	override fun N_d2i(str: String) = "N.d2i($str)"
 	override fun N_d2d(str: String) = "+($str)"
 	override fun N_j2i(str: String) = "N.j2i($str)"
 	override fun N_j2j(str: String) = str
@@ -280,12 +341,34 @@ class JsGenerator(injector: Injector) : CommonGenerator(injector) {
 	override fun N_imul(l: String, r: String): String = "Math.imul($l, $r)"
 
 	override val String.escapeString: String get() = "S[" + allocString(context.clazz.name, this) + "]"
+	val String.escapeStringJs: String get() = "SS[" + allocString(context.clazz.name, this) + "]"
 
-	override fun genExprCallBaseSuper(e2: AstExpr.CALL_SUPER, clazz: AstType.REF, refMethodClass: AstClass, method: AstMethodRef, methodAccess: String, args: List<String>): String {
+	private fun ensureAsynchronous(msg: String) {
+		val methodAsync = context.method.isAsync
+		if (!methodAsync) {
+			System.err.println("WARNING: $context: From a synchronous method, trying to call an asynchronous method $msg")
+		}
+	}
+
+	override fun genCallWrap(e: AstExpr.CALL_BASE, str: String): String {
+		val callAsync = e.method.actualMethod?.isAsync != false
+		if (callAsync) ensureAsynchronous(e.method.toString())
+		return if (callAsync) "($AWAIT($str))" else str
+	}
+
+	override fun generateDeclArgString(args: List<String>): String {
+		return (JC_LIST + args).joinToString(", ")
+	}
+
+	override fun generateCallArgString(args: List<String>, isNativeCall: Boolean): String {
+		return ((if (isNativeCall) listOf() else JC_LIST) + args).joinToString(", ")
+	}
+
+	override fun genExprCallBaseSuper(e2: AstExpr.CALL_SUPER, clazz: AstType.REF, refMethodClass: AstClass, method: AstMethodRef, methodAccess: String, args: List<String>, isNativeCall: Boolean): String {
 		val superMethod = refMethodClass[method.withoutClass] ?: invalidOp("Can't find super for method : $method")
 		val base = superMethod.containingClass.name.targetName + ".prototype"
-		val argsString = (listOf(e2.obj.genExpr()) + args).joinToString(", ")
-		return "$base$methodAccess.call($argsString)"
+		val argsString = (listOf(e2.obj.genExpr()) + (if (isNativeCall) listOf() else JC_LIST) + args).joinToString(", ")
+		return genCallWrap(e2, "$base$methodAccess.call($argsString)")
 	}
 
 	private fun AstMethod.getJsNativeBodies(): Map<String, Indenter> = this.getNativeBodies(target = "js")
@@ -303,9 +386,10 @@ class JsGenerator(injector: Injector) : CommonGenerator(injector) {
 			if (isAbstract) line("// ABSTRACT")
 
 			val classBase = clazz.name.targetName
-			val memberBaseStatic = classBase
-			val memberBaseInstance = "$classBase.prototype"
-			fun getMemberBase(isStatic: Boolean) = if (isStatic) memberBaseStatic else memberBaseInstance
+			//val memberBaseStatic = classBase
+			//val memberBaseInstance = "$classBase.prototype"
+			fun getMemberBase(isStatic: Boolean) = if (isStatic) "static " else ""
+
 			val parentClassBase = if (clazz.extending != null) clazz.extending!!.targetName else "java_lang_Object_base";
 
 			val staticFields = clazz.fields.filter { it.isStatic }
@@ -317,137 +401,133 @@ class JsGenerator(injector: Injector) : CommonGenerator(injector) {
 			val allInstanceFieldsThis = allInstanceFields.filter { lateInitField(it) }
 			val allInstanceFieldsProto = allInstanceFields.filter { !lateInitField(it) }
 
-			line("function $classBase()") {
-				for (field in allInstanceFieldsThis) {
-					val nativeMemberName = if (field.targetName == field.name) field.name else field.targetName
-					line("this${instanceAccess(nativeMemberName, field = true)} = ${field.escapedConstantValue};")
+			line("class $classBase extends $parentClassBase") {
+				line("constructor()") {
+					line("super();")
+					for (field in allInstanceFieldsThis) {
+						val nativeMemberName = if (field.targetName == field.name) field.name else field.targetName
+						line("this${instanceAccess(nativeMemberName, field = true)} = ${field.escapedConstantValue};")
+					}
 				}
+
+				if (staticFields.isNotEmpty() || clazz.staticConstructor != null) {
+					line("static $ASYNC SI($JC)") {
+						//line("$classBase.SI = N.EMPTY_FUNCTION;")
+						for (field in staticFields) {
+							val nativeMemberName = if (field.targetName == field.name) field.name else field.targetName
+							line("$classBase${instanceAccess(nativeMemberName, field = true)} = ${field.escapedConstantValue};")
+						}
+						if (clazz.staticConstructor != null) {
+							val await = if (clazz.staticConstructor?.isAsync == true) "$AWAIT " else ""
+							line("($await($classBase${getTargetMethodAccess(clazz.staticConstructor!!, true)}($JC)));")
+						}
+					}
+				} else {
+					line("static $ASYNC SI($JC)") {
+
+					}
+				}
+
+				//renderFields(clazz.fields);
+
+				fun writeMethod(method: AstMethod): Indenter {
+					setCurrentMethod(method)
+					return Indenter {
+						refs.add(method.methodType)
+						val margs = method.methodType.args.map { it.name }
+
+						//val defaultMethodName = if (method.isInstanceInit) "${method.ref.classRef.fqname}${method.name}${method.desc}" else "${method.name}${method.desc}"
+						//val methodName = if (method.targetName == defaultMethodName) null else method.targetName
+						val nativeMemberName = buildMethod(method, false, includeDot = false)
+						//val prefix = "${getMemberBase(method.isStatic)}${instanceAccess(nativeMemberName, field = false)}"
+						val async = if (method.isAsync) "$ASYNC " else ""
+						val prefix = "${getMemberBase(method.isStatic)}$async${commonAccessBase(nativeMemberName, field = false)}"
+						val rbody = if (method.body != null) method.body else if (method.bodyRef != null) program[method.bodyRef!!]?.body else null
+
+						fun renderBranch(actualBody: Indenter?) = Indenter {
+							//if (actualBody != null) {
+							//	line("$prefix(${margs.joinToString(", ")})") {
+							//		line(actualBody)
+							//		if (method.methodVoidReturnThis) line("return this;")
+							//	}
+							//} else {
+							//	line("$prefix() { N.methodWithoutBody('${clazz.name}.${method.name}') }")
+							//}
+
+							if (actualBody != null) {
+								line(actualBody)
+								if (method.methodVoidReturnThis) line("return this;")
+							} else {
+								line("N.methodWithoutBody('${clazz.name}.${method.name}');")
+							}
+						}
+
+						fun renderBranches() = Indenter {
+							line("$prefix(${generateDeclArgString(margs)})") {
+								try {
+									val nativeBodies = method.getJsNativeBodies()
+									var javaBodyCacheDone: Boolean = false
+									var javaBodyCache: Indenter? = null
+									fun javaBody(): Indenter? {
+										if (!javaBodyCacheDone) {
+											javaBodyCacheDone = true
+											javaBodyCache = rbody?.genBodyWithFeatures(method)
+										}
+										return javaBodyCache
+									}
+									//val javaBody by lazy {  }
+
+									// @TODO: Do not hardcode this!
+									if (nativeBodies.isEmpty() && javaBody() == null) {
+										line(renderBranch(null))
+									} else {
+										if (nativeBodies.isNotEmpty()) {
+											val default = if ("" in nativeBodies) nativeBodies[""]!! else javaBody() ?: Indenter.EMPTY
+											val options = nativeBodies.filter { it.key != "" }.map { it.key to it.value } + listOf("" to default)
+
+											if (options.size == 1) {
+												line(renderBranch(default))
+											} else {
+												for (opt in options.withIndex()) {
+													if (opt.index != options.size - 1) {
+														val iftype = if (opt.index == 0) "if" else "else if"
+														line("$iftype (${opt.value.first})") { line(renderBranch(opt.value.second)) }
+													} else {
+														line("else") { line(renderBranch(opt.value.second)) }
+													}
+												}
+											}
+											//line(nativeBodies ?: javaBody ?: Indenter.EMPTY)
+										} else {
+											line(renderBranch(javaBody()))
+										}
+									}
+								} catch (e: Throwable) {
+									log.printStackTrace(e)
+									log.warn("WARNING GenJsGen.writeMethod:" + e.message)
+
+									line("// Errored method: ${clazz.name}.${method.name} :: ${method.desc} :: ${e.message};")
+									line(renderBranch(null))
+								}
+							}
+						}
+
+						line(renderBranches())
+					}
+				}
+
+				for (method in clazz.methods.filter { it.isClassOrInstanceInit }) line(writeMethod(method))
+				for (method in clazz.methods.filter { !it.isClassOrInstanceInit }) line(writeMethod(method))
 			}
 
-			line("$classBase.prototype = Object.create($parentClassBase.prototype);")
-			line("$classBase.prototype.constructor = $classBase;")
-
+			val relatedTypesIds = (clazz.getAllRelatedTypes() + listOf(JAVA_LANG_OBJECT_CLASS)).toSet().map { it.classId }
 			for (field in allInstanceFieldsProto) {
 				val nativeMemberName = if (field.targetName == field.name) field.name else field.targetName
 				line("$classBase.prototype${instanceAccess(nativeMemberName, field = true)} = ${field.escapedConstantValue};")
 			}
-
-			// @TODO: Move to genSIMethodBody
-			//if (staticFields.isNotEmpty() || clazz.staticConstructor != null) {
-			//	line("$classBase.SI = function()", after2 = ";") {
-			//		line("$classBase.SI = N.EMPTY_FUNCTION;")
-			//		for (field in staticFields) {
-			//			val nativeMemberName = if (field.targetName == field.name) field.name else field.targetName
-			//			line("${getMemberBase(field.isStatic)}${accessStr(nativeMemberName)} = ${field.escapedConstantValue};")
-			//		}
-			//		if (clazz.staticConstructor != null) {
-			//			line("$classBase${getTargetMethodAccess(clazz.staticConstructor!!, true)}();")
-			//		}
-			//	}
-			//} else {
-			//	line("$classBase.SI = N.EMPTY_FUNCTION;")
-			//}
-			//line("$classBase.SI = N.EMPTY_FUNCTION;")
-
-			if (staticFields.isNotEmpty() || clazz.staticConstructor != null) {
-				line("$classBase.SI = function()", after2 = ";") {
-					//line("$classBase.SI = N.EMPTY_FUNCTION;")
-					for (field in staticFields) {
-						val nativeMemberName = if (field.targetName == field.name) field.name else field.targetName
-						line("${getMemberBase(field.isStatic)}${instanceAccess(nativeMemberName, field = true)} = ${field.escapedConstantValue};")
-					}
-					if (clazz.staticConstructor != null) {
-						line("$classBase${getTargetMethodAccess(clazz.staticConstructor!!, true)}();")
-					}
-				}
-			} else {
-				line("$classBase.SI = function(){};")
-			}
-
-			val relatedTypesIds = (clazz.getAllRelatedTypes() + listOf(JAVA_LANG_OBJECT_CLASS)).toSet().map { it.classId }
 			line("$classBase.prototype.__JT__CLASS_ID = $classBase.__JT__CLASS_ID = ${clazz.classId};")
 			line("$classBase.prototype.__JT__CLASS_IDS = $classBase.__JT__CLASS_IDS = [${relatedTypesIds.joinToString(",")}];")
-
-			//renderFields(clazz.fields);
-
-			fun writeMethod(method: AstMethod): Indenter {
-				setCurrentMethod(method)
-				return Indenter {
-					refs.add(method.methodType)
-					val margs = method.methodType.args.map { it.name }
-
-					//val defaultMethodName = if (method.isInstanceInit) "${method.ref.classRef.fqname}${method.name}${method.desc}" else "${method.name}${method.desc}"
-					//val methodName = if (method.targetName == defaultMethodName) null else method.targetName
-					val nativeMemberName = buildMethod(method, false, includeDot = false)
-					val prefix = "${getMemberBase(method.isStatic)}${instanceAccess(nativeMemberName, field = false)}"
-
-					val rbody = if (method.body != null) method.body else if (method.bodyRef != null) program[method.bodyRef!!]?.body else null
-
-					fun renderBranch(actualBody: Indenter?) = Indenter {
-						if (actualBody != null) {
-							line("$prefix = function(${margs.joinToString(", ")})", after2 = ";") {
-								line(actualBody)
-								if (method.methodVoidReturnThis) line("return this;")
-							}
-						} else {
-							line("$prefix = function() { N.methodWithoutBody('${clazz.name}.${method.name}') };")
-						}
-					}
-
-					fun renderBranches() = Indenter {
-						try {
-							val nativeBodies = method.getJsNativeBodies()
-							var javaBodyCacheDone: Boolean = false
-							var javaBodyCache: Indenter? = null
-							fun javaBody(): Indenter? {
-								if (!javaBodyCacheDone) {
-									javaBodyCacheDone = true
-									javaBodyCache = rbody?.genBodyWithFeatures(method)
-								}
-								return javaBodyCache
-							}
-							//val javaBody by lazy {  }
-
-							// @TODO: Do not hardcode this!
-							if (nativeBodies.isEmpty() && javaBody() == null) {
-								line(renderBranch(null))
-							} else {
-								if (nativeBodies.isNotEmpty()) {
-									val default = if ("" in nativeBodies) nativeBodies[""]!! else javaBody() ?: Indenter.EMPTY
-									val options = nativeBodies.filter { it.key != "" }.map { it.key to it.value } + listOf("" to default)
-
-									if (options.size == 1) {
-										line(renderBranch(default))
-									} else {
-										for (opt in options.withIndex()) {
-											if (opt.index != options.size - 1) {
-												val iftype = if (opt.index == 0) "if" else "else if"
-												line("$iftype (${opt.value.first})") { line(renderBranch(opt.value.second)) }
-											} else {
-												line("else") { line(renderBranch(opt.value.second)) }
-											}
-										}
-									}
-									//line(nativeBodies ?: javaBody ?: Indenter.EMPTY)
-								} else {
-									line(renderBranch(javaBody()))
-								}
-							}
-						} catch (e: Throwable) {
-							log.printStackTrace(e)
-							log.warn("WARNING GenJsGen.writeMethod:" + e.message)
-
-							line("// Errored method: ${clazz.name}.${method.name} :: ${method.desc} :: ${e.message};")
-							line(renderBranch(null))
-						}
-					}
-
-					line(renderBranches())
-				}
-			}
-
-			for (method in clazz.methods.filter { it.isClassOrInstanceInit }) line(writeMethod(method))
-			for (method in clazz.methods.filter { !it.isClassOrInstanceInit }) line(writeMethod(method))
+			line("")
 		}
 
 		return listOf(ClassResult(SubClass(clazz, MemberTypes.ALL), classCodeIndenter))
@@ -465,10 +545,61 @@ class JsGenerator(injector: Injector) : CommonGenerator(injector) {
 
 	override val AstType.localDeclType: String get() = "var"
 
-	override fun genStmThrow(stm: AstStm.THROW, last: Boolean) = Indenter("throw new WrappedError(${stm.exception.genExpr()});")
+	override fun genStmThrow(stm: AstStm.THROW, last: Boolean) = Indenter("throw NewWrappedError(${stm.exception.genExpr()});")
 
 	override fun genExprCastChecked(e: String, from: AstType.Reference, to: AstType.Reference): String {
 		return "N.checkCast($e, ${to.targetNameRef})"
+	}
+
+	override fun genConcatString(e: AstExpr.CONCAT_STRING): String {
+		if (IS_ASYNC) return genExpr2(e.original) // Do not optimize async (not supporting toStringAsync)
+
+		try {
+			val params = e.args.map {
+				if (it is AstExpr.LITERAL) {
+					val value = it.value
+					when (it.type) {
+						AstType.STRING -> (value as String).quote()
+						AstType.BYTE -> ("" + (value as Byte)).quote()
+						AstType.CHAR -> ("" + (value as Char)).quote()
+						AstType.INT -> ("" + (value as Int)).quote()
+						AstType.LONG -> ("" + (value as Long)).quote()
+						AstType.FLOAT -> ("" + (value as Float)).quote()
+						AstType.DOUBLE -> ("" + (value as Double)).quote()
+						AstType.OBJECT -> genExpr2(it)
+						else -> invalidOp("genConcatString[1]: ${it.type}")
+					}
+				} else {
+					when (it.type) {
+						AstType.STRING, AstType.OBJECT -> genExpr2(it)
+						AstType.BOOL -> "N.boxBool(" + genExpr2(it) + ")"
+						AstType.BYTE -> genExpr2(it)
+						AstType.CHAR -> "N.boxChar(" + genExpr2(it) + ")"
+						AstType.SHORT -> genExpr2(it)
+						AstType.INT -> genExpr2(it)
+						AstType.FLOAT -> "N.boxFloat(" + genExpr2(it) + ")"
+						AstType.DOUBLE -> "N.boxDouble(" + genExpr2(it) + ")"
+						AstType.LONG -> "N.boxLong(" + genExpr2(it) + ")"
+						else -> invalidOp("genConcatString[2]: ${it.type}")
+					}
+				}
+			}.joinToString(" + ")
+			return "N.str('' + $params)"
+		} catch (t: InvalidOperationException) {
+			t.printStackTrace()
+			return genExpr2(e.original)
+		}
+	}
+
+	// @TODO: async/await
+	override fun genStmMonitorEnter(stm: AstStm.MONITOR_ENTER) = indent {
+		ensureAsynchronous("monitorEnter")
+		line("($AWAIT(N.monitorEnter($JC_COMMA${stm.expr.genExpr()})));")
+	}
+
+	override fun genStmMonitorExit(stm: AstStm.MONITOR_EXIT) = indent {
+		ensureAsynchronous("monitorExit")
+		line("($AWAIT(N.monitorExit($JC_COMMA${stm.expr.genExpr()})));")
 	}
 
 }

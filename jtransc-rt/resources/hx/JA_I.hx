@@ -35,9 +35,11 @@ class JA_I extends JA_0 {
 		}
         this.data = data;
         this.length = length;
+        this.elementShift = 2;
         this.desc = "[I";
 		#if cpp
-		ptr = NativeArray.address(data.toData(), 0);
+			ptr = NativeArray.address(data.toData(), 0);
+	       	rawPtr = ptr.rawCast();
 		#end
     }
 
@@ -109,9 +111,18 @@ class JA_I extends JA_0 {
     }
 
 	{{ HAXE_METHOD_ANNOTATIONS }}
+	public function fill(from: Int, to: Int, value: Int) {
+		#if cpp
+			N.memsetN4(this.rawPtr, from, to - from, value);
+		#else
+			for (n in from ... to) set(n, value);
+		#end
+	}
+
+	{{ HAXE_METHOD_ANNOTATIONS }}
     static public function copy(from:JA_I, to:JA_I, fromPos:Int, toPos:Int, length:Int) {
 		#if (cpp || flash)
-		Vector.blit(from.data, fromPos, to.data, toPos, length);
+		Vector.blit(from.data, fromPos, to.data, toPos, length); // does this support overlapping?
 		#else
     	if (from == to && toPos > fromPos) {
 			var n = length;
@@ -121,6 +132,11 @@ class JA_I extends JA_0 {
 	    }
 		#end
     }
+
+	{{ HAXE_METHOD_ANNOTATIONS }}
+	public function setArraySlice(startIndex: Int, array: Array<Int>) {
+		for (n in 0...array.length) this.set(startIndex + n, array[n]);
+	}
 
     {{ HAXE_METHOD_ANNOTATIONS }} override public function copyTo(srcPos: Int, dst: JA_0, dstPos: Int, length: Int) { copy(this, cast(dst, JA_I), srcPos, dstPos, length); }
 }

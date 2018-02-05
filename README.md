@@ -4,17 +4,25 @@ JTRANSC
 ![JTransc](extra/logo-256.png)
 
 [![Maven Version](https://img.shields.io/github/tag/jtransc/jtransc.svg?style=flat&label=maven)](http://search.maven.org/#search%7Cga%7C1%7Ca%3A%22jtransc-maven-plugin%22)
-[![Build Status](https://secure.travis-ci.org/jtransc/jtransc.svg)](http://travis-ci.org/#!/jtransc/jtransc)
+[![Build Status](https://secure.travis-ci.org/jtransc/jtransc.svg)](http://travis-ci.org/jtransc/jtransc)
+[![Build status](https://ci.appveyor.com/api/projects/status/qnd0g966t1b54q4a?svg=true)](https://ci.appveyor.com/project/soywiz/jtransc)
+[![Code coverage](https://codecov.io/gh/jtransc/jtransc/branch/master/graph/badge.svg)](https://codecov.io/gh/jtransc/jtransc)
 [![gitter](https://img.shields.io/gitter/room/jtransc/general.svg)](https://gitter.im/jtransc/general)
 
 # Documentation
 
 You can find documentation at the [wiki](http://docs.jtransc.com/).
 
+# What is this?
+
+JTransc (Java Trans Compiler) is an AOT (ahead of time compiler) that compiles .class and .jar files
+into a target programming language / executable bundling all the required dependencies in a single file or folder,
+without requiring a jitter or an external runtime.
+
 # Why using JTransc?
 
-There are a lot of technologies in order to convert languages into other ones. For example, convert Java into JavaScript.
-Or even Kotlin already targets JavaScript. So why using JTransc?
+There are a lot of technologies in order to convert languages into other ones. For example, converting Java into JavaScript.
+Or KotlinJS Kotlin backend that already targets JavaScript. So why using JTransc?
 
 ### Mixed input code:
 
@@ -22,7 +30,7 @@ One reason is that JTransc allows mixed projects. You can use Java libraries wit
 
 ### Multiple targets:
 
-Instead of using several technologies. JTransc allows you to target to several places.
+Instead of using several technologies, JTransc allows you to target to several languages and platforms.
 
 ### Consistency:
 
@@ -30,18 +38,25 @@ Using just one technology guarantees consistency between targets. For example, K
 
 ### Native:
 
-Instead of generating C++ and then using emscripten or other technologies, JTransc allows you to generate code that is native to your platform.
+Instead of generating C++ and then using emscripten or other technologies, JTransc allows you to generate code that is
+native to your platform. For example: when targeting JS you will use native JS best-in-class GC instead of a GC
+emulated in C++ & emscripten. And no need to know a proper heap size beforehand targeting JS.
 
 ### Native facilities:
 
-Some classes like String, StringBuilder or ArrayList are implemented in a way that it uses native JavaScript facilities.
+Some classes like String, StringBuilder or ArrayList are implemented in a way that it uses native JavaScript/AS3/Dart... facilities.
 Like JavaScript String, Array and so on.
 
-### Treeshaking
+### Treeshaking:
 
 Instead of generating huge projects including everything, or having complex proguard configuration files.
 JTransc includes treeshaking in a simple way. You can use annotations to keep methods, classes and fields or another annotations.
 It works for all targets and it is fully integrated in the workflow.
+
+### Thread and sync I/O support in JS:
+
+JTransc supports plain Java applications using Threads and sync I/O in JS converting that into an asynchronous version in JS
+using await/async detecting branches not using Threads/sync I/O for fastest performance.
 
 # Support this project
 
@@ -51,14 +66,16 @@ Along JTransc, I'm writting a set of libraries to be able to use JTransc.
 
 Kotlin Game Engine that uses JTransc for multiplatform: [https://github.com/soywiz/korge](https://github.com/soywiz/korge)
 
+Also there is a GDX backend using JTransc+Haxe: [https://github.com/jtransc/gdx-backend-jtransc](https://github.com/jtransc/gdx-backend-jtransc)
 
 JTransc
 
-# What is this?
+# Detailed: What is this?
 
 JTransc (Java Trans Compiler) is an AOT (ahead of time compiler) that compiles .class and .jar files
-into a target executable bundling all the required dependencies in a single file, without requiring
+into a target programming language / executable bundling all the required dependencies in a single file or folder, without requiring
 a jitter or an external runtime.
+
 At the beginning it generated as3 and javascript, but right now there are several targets: Javascript, Haxe, C++, and D.
 Haxe itself allow to target several other languages: JS, AS3, C++, C#, Java, PHP and Python.
 This in turn allows running the program on different platforms such as desktop, browsers and mobile.
@@ -98,7 +115,7 @@ This is the preferred way of using JTransc. You can include it from maven centra
 
 ```
 plugins {
-  id "com.jtransc" version "0.6.3"
+  id "com.jtransc" version "0.6.8"
 }
 ```
 
@@ -144,7 +161,7 @@ So others could generate that without JVM and others could generate other target
 ### For the Haxe target:
 - Haxe 3.4.2
 - NekoVM 2.1.0
-- Lime 5.2.1
+- Lime 5.5.0
 - hxcpp 3.4.64
 
 ### For Node.JS running:
@@ -163,14 +180,47 @@ So others could generate that without JVM and others could generate other target
 
 #### Installing JDK
 - Install [JDK8](http://www.oracle.com/technetwork/java/javase/downloads/)
+- Setup $JAVA_HOME
+This sample, but maybe not working for you, be careful
+```
+echo "export JAVA_HOME=$(/usr/libexec/java_home)" >> ~/.bash_profile
+source ~/.bash_profile
+```
+
 - Install [Android SDK Tools](https://developer.android.com/studio/index.html)
+- Setup Android SDK with install NDK.
 
 #### Installing Haxe
 - Install [Haxe](https://haxe.org/download/) from here via installer
 - Set path to haxelib running "haxelib setup" command
-- Install [Lime](http://www.openfl.org/builds/lime/) `haxelib install lime 5.2.1`
+- Install [Lime](http://www.openfl.org/builds/lime/) `haxelib install lime 5.5.0`
 - Install [hxcpp](http://nmehost.com/hxcpp/) `haxelib install hxcpp 3.4.64`
 - Run `haxelib run lime setup`
+
+######https://github.com/openfl/lime/issues/831
+- Run `lime setup android`
+If try install you gain Out of Memory, choose manual mode.
+```
+Download and install the Android SDK? [y/n/a] ? n
+Download and install the Android NDK? [y/n/a] ? n
+Download and install the Java JDK? [y/n/a] ? n
+
+Path to Android SDK [C:\tools\android-sdk]:
+Path to Android NDK []: C:\tools\android-ndk
+Path to Java JDK [C:\Program Files\Java\jdk1.8.0_131]:
+```
+
+#### Setup AppleTV
+- Run `lime rebuild hxcpp tvos`
+- Remove stable lime `haxelib remove lime`
+- Install lime from GitHub `git clone --recursive https://github.com/openfl/lime`
+```
+haxelib dev lime lime
+haxelib install format
+lime rebuild mac
+lime rebuild ios
+lime rebuild tvos
+```
 
 #### Installing Node.JS
 - Install [NodeJS + npm](https://nodejs.org/en/)
@@ -181,13 +231,33 @@ So others could generate that without JVM and others could generate other target
 
 #### Installing C++ suitable compiler
 __WINDOWS__
-- Install [mingw-w64](https://sourceforge.net/projects/mingw-w64/) v7.1.0 -> x68_64-posix-seh Revision 0
-- Add "path/to/mingw64" to `PATH` environment variable
+- Install [mingw](http://www.mingw.org/)
+- Add "path/to/mingw/bin" to `PATH` environment variable strongly on first line
 - Install cmake [https://cmake.org/download/](https://cmake.org/download/)
 
+Workaround for big projects: haxe 3.4.2 can failed with out of memory. You can try replace haxe files
+ [from develop](http://hxbuilds.s3-website-us-east-1.amazonaws.com/builds/haxe/windows/),
+ but this dangerous way, and get only stable, see history on github.
+ My current choose: 2017-03-23 05:39:01 >> 4876859 >> haxe_2017-03-23_development_ada466c.tar.gz
+
+__WINDOWS 64__
+
+- go to hxcpp/3.4.64 folder in console `neko run.n Build.xml -Dwindows -DHXCPP_M64 -Dstatic_link ./project/`
+- Remove stable lime `haxelib remove lime`
+- Install lime from GitHub `git clone --recursive https://github.com/openfl/lime -b master`
+```
+haxelib dev lime lime
+haxelib install format
+```
+if use MSVC 2013 with not fully supported c99 standard, then replace in lib\openal all inline to __inline, and snprintf to _snprintf
+```
+lime rebuild windows -64
+```
+
 __MAC__
-- Install Xcode 8.3.2
-- Related to pure C++ target on mac: `brew install automake libtool`
+- Install Xcode 8.3.3
+- This XCode have problem with logs for iPhone with iOS 10.3.2. Please see [solution](https://github.com/flutter/flutter/issues/4326#issuecomment-308249455)
+- Related to pure C++ target on mac: `brew install automake libtool pkg-config`
 - Install [Mono](http://www.mono-project.com/download/) 5.0.1.1  ??? https://github.com/jtransc/jtransc/issues/167
 - For upload on iPhone/iPad from command line `sudo npm install -g ios-deploy --unsafe-perm --allow-root`
 

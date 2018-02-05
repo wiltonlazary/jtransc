@@ -29,6 +29,9 @@ class CSharpTarget : GenTargetDescriptor() {
 	override val runningAvailable = true
 	override val programFeatures: Set<Class<AstProgramFeature>> = setOf()
 
+	open val ARRAY_OPEN_SYMBOL = "new [] {"
+	open val ARRAY_CLOSE_SYMBOL = "}"
+
 	override val buildTargets: List<TargetBuildTarget> = listOf(
 		TargetBuildTarget("cs", "cs", "program.cs", minimizeNames = false)
 	)
@@ -55,10 +58,12 @@ class CSharpTarget : GenTargetDescriptor() {
 
 @Singleton
 class CSharpGenerator(injector: Injector) : CommonGenerator(injector) {
+	override val TARGET_NAME: String = "CSHARP"
 	override val SINGLE_FILE: Boolean = true
 
 	//class DGenerator(injector: Injector) : FilePerClassCommonGenerator(injector) {
-	override val methodFeatures = setOf(SwitchFeature::class.java, GotosFeature::class.java)
+	//override val methodFeatures = setOf(SwitchFeature::class.java, GotosFeature::class.java)
+	override val methodFeatures = setOf(SwitchFeature::class.java)
 	override val methodFeaturesWithTraps = setOf(SwitchFeature::class.java)
 	override val stringPoolType: StringPool.Type = StringPool.Type.GLOBAL
 	override val interfacesSupportStaticMembers: Boolean = false
@@ -181,7 +186,7 @@ class CSharpGenerator(injector: Injector) : CommonGenerator(injector) {
 	override fun N_i2b(str: String) = "((sbyte)($str))"
 	override fun N_i2c(str: String) = "((ushort)($str))"
 	override fun N_i2s(str: String) = "((short)($str))"
-	override fun N_f2i(str: String) = "((int)($str))"
+	override fun N_f2i(str: String) = "N.f2i($str)"
 
 	//fun String?.dquote(): String = if (this != null) "\"${this.escape()}\"" else "null"
 
@@ -199,7 +204,7 @@ class CSharpGenerator(injector: Injector) : CommonGenerator(injector) {
 					'\t' -> out.append("\\t")
 				//in '\u0000'..'\u001f' -> out.append("\\x" + "%02x".format(c.toInt()))
 				//in '\u0020'..'\u00ff' -> out.append(c)
-					in 'a' .. 'z', in 'A' .. 'Z', in '0' .. '9', '_', '.', ',', ';', ':', '<', '>', '{', '}', '[', ']', '/', ' ', '=', '!', '%', '$', '&' -> out.append(c)
+					in 'a'..'z', in 'A'..'Z', in '0'..'9', '_', '.', ',', ';', ':', '<', '>', '{', '}', '[', ']', '/', ' ', '=', '!', '%', '$', '&' -> out.append(c)
 					else -> out.append("\\u" + "%04x".format(c.toInt()))
 				}
 			}
@@ -293,7 +298,11 @@ class CSharpGenerator(injector: Injector) : CommonGenerator(injector) {
 			line("static public void SI()") {
 				val clazzName = if (clazz.isInterface) clazz.name.targetNameForStatic else clazz.name.targetName
 				for (field in clazz.fields.filter { it.isStatic }) {
-					line("$clazzName.${field.targetName} = ${field.escapedConstantValue};")
+					if (field.type == AstType.BOOL) {
+						line("$clazzName.${field.targetName} = ${field.escapedConstantValue == "1"};")
+					} else {
+						line("$clazzName.${field.targetName} = ${field.escapedConstantValue};")
+					}
 				}
 				line(genSIMethodBody(clazz))
 			}
@@ -302,9 +311,9 @@ class CSharpGenerator(injector: Injector) : CommonGenerator(injector) {
 		}
 	}
 
-	override fun genBody2WithFeatures(method: AstMethod, body: AstBody): Indenter = Indenter {
+	override fun genBody2WithFeatures2(method: AstMethod, body: AstBody): Indenter = Indenter {
 		line("unchecked") {
-			line(super.genBody2WithFeatures(method, body))
+			line(super.genBody2WithFeatures2(method, body))
 		}
 	}
 
@@ -312,7 +321,7 @@ class CSharpGenerator(injector: Injector) : CommonGenerator(injector) {
 	override fun N_i(str: String) = "($str)"
 
 	//override fun N_f2i(str: String) = "((int)($str))"
-	override fun N_d2i(str: String) = "((int)($str))"
+	override fun N_d2i(str: String) = "N.d2i($str)"
 
 	override fun N_c_eq(l: String, r: String) = "($l == $r)"
 	override fun N_c_ne(l: String, r: String) = "($l != $r)"
@@ -405,7 +414,7 @@ class CSharpGenerator(injector: Injector) : CommonGenerator(injector) {
 	//	else -> super.escapedConstant(v)
 	//}
 
-	override fun genExprCallBaseSuper(e2: AstExpr.CALL_SUPER, clazz: AstType.REF, refMethodClass: AstClass, method: AstMethodRef, methodAccess: String, args: List<String>): String {
+	override fun genExprCallBaseSuper(e2: AstExpr.CALL_SUPER, clazz: AstType.REF, refMethodClass: AstClass, method: AstMethodRef, methodAccess: String, args: List<String>, isNativeCall: Boolean): String {
 		return "base$methodAccess(${args.joinToString(", ")})"
 	}
 

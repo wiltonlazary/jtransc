@@ -23,6 +23,7 @@ import com.jtransc.ast.dependency.AstDependencyAnalyzer
 import com.jtransc.ast.optimize.AstOptimizer
 import com.jtransc.ds.cast
 import com.jtransc.ds.clearFlags
+import com.jtransc.ds.combinedWith
 import com.jtransc.ds.hasFlag
 import com.jtransc.error.InvalidOperationException
 import com.jtransc.error.firstMapOrNull
@@ -33,7 +34,9 @@ import com.jtransc.injector.Singleton
 import com.jtransc.lang.Extra
 import com.jtransc.lang.putIfAbsentJre7
 import com.jtransc.maven.MavenLocalRepository
+import com.jtransc.org.objectweb.asm.Type
 import com.jtransc.text.quote
+import com.jtransc.text.substr
 import com.jtransc.util.dependencySorter
 import com.jtransc.vfs.IUserData
 import com.jtransc.vfs.UserData
@@ -58,6 +61,7 @@ data class AstBuildSettings(
 	var libraries: List<AstBuildSettings.Library> = listOf(),
 	var assets: List<File> = listOf(),
 	var debug: Boolean = true,
+	var optimize: Boolean = true,
 	var initialWidth: Int = 1280,
 	var initialHeight: Int = 720,
 	var vsync: Boolean = true,
@@ -156,7 +160,7 @@ class AstGenContext {
 	}
 
 	override fun toString() = try {
-		"${clazz.name}::${method.name}"
+		"${clazz.name}::${method.name}${method.desc}"
 	} catch (e: Throwable) {
 		try {
 			"${clazz.name}"
@@ -225,7 +229,7 @@ class AstProgram(
 			val classFile = name.internalFqname + ".class"
 			println("AstProgram. Can't find class '$name'")
 			println("AstProgram. ClassFile: $classFile")
-			println("AstProgram. File exists: " + resourcesVfs[classFile].exists)
+			println("AstProgram. File exists: " + resourcesVfs[classFile].exists + " : " + resourcesVfs[classFile].realpathOS)
 
 			throw InvalidOperationException("AstProgram. Can't find class '$name'")
 		} else {
@@ -237,6 +241,7 @@ class AstProgram(
 
 	fun add(clazz: AstClass) {
 		if (finished) invalidOp("Can't add more classes to a finished program")
+		_classes.removeIf { it.name == clazz.name }
 		_classes.add(clazz)
 		_classesByFqname[clazz.fqname] = clazz
 	}
@@ -314,7 +319,7 @@ open class AstAnnotatedElement(
 	val program: AstProgram,
 	val elementRef: AstRef,
 	override val annotations: List<AstAnnotation>
-) : AstAnnotated {
+) : AstAnnotated, Extra by Extra.Mixin() {
 	var extraKeep: Boolean? = null
 	var extraVisible: Boolean? = null
 	val keep: Boolean get() {
@@ -333,16 +338,18 @@ open class AstAnnotatedElement(
 
 val AstAnnotated?.keepName: Boolean get() = this?.annotationsList?.contains<JTranscKeepName>() ?: false
 
+val Type.fqname get() = this.className.fqname
+
 class AstClass(
 	val source: String,
 	program: AstProgram,
 	val name: FqName,
-	val modifiers: AstModifiers,
+	override val modifiers: AstModifiers,
 	val extending: FqName? = null,
 	val implementing: List<FqName> = listOf(),
 	annotations: List<AstAnnotation> = listOf(),
 	val classId: Int = program.lastClassId++
-) : AstAnnotatedElement(program, name.ref, annotations), IUserData by UserData() {
+) : AstAnnotatedElement(program, name.ref, annotations), IUserData by UserData(), WithAstModifiersClass {
 	val types get() = program.types
 
 	val implementingUnique by lazy { implementing.distinct() }
@@ -364,6 +371,13 @@ class AstClass(
 		}
 
 		interfaces.map { it.name }
+	}
+
+	val rerefList by lazy { annotationsList.getUntypedList(JTranscTargetClassImplList::value) }
+
+	fun getRerefFor(target: TargetName): FqName? {
+		val type = rerefList.firstOrNull { target.matches(it["target"] as String) }?.get("implementation") as? Type?
+		return type?.fqname
 	}
 
 	val ref = AstType.REF(name)
@@ -677,14 +691,14 @@ class AstField(
 	val id: Int = containingClass.program.lastFieldId++,
 	name: String,
 	type: AstType,
-	val modifiers: AstModifiers,
+	override val modifiers: AstModifiers,
 	val desc: String,
 	annotations: List<AstAnnotation>,
 	val genericSignature: String?,
 	val constantValue: Any? = null,
 	val types: AstTypes,
 	override val ref: AstFieldRef = AstFieldRef(containingClass.name, name, type)
-) : AstMember(containingClass, name, type, if (genericSignature != null) types.demangle(genericSignature) else type, modifiers.isStatic, modifiers.visibility, ref, annotations), FieldRef {
+) : AstMember(containingClass, name, type, if (genericSignature != null) types.demangle(genericSignature) else type, modifiers.isStatic, modifiers.visibility, ref, annotations), FieldRef, WithAstModifiersField {
 	val uniqueName = containingClass.uniqueNames.alloc(name)
 	val isFinal: Boolean = modifiers.isFinal
 	val refWithoutClass: AstFieldWithoutClassRef by lazy { AstFieldWithoutClassRef(this.name, this.type) }
@@ -708,7 +722,7 @@ class AstMethod constructor(
 	val signature: String,
 	val genericSignature: String?,
 	val defaultTag: Any?,
-	val modifiers: AstModifiers,
+	override val modifiers: AstModifiers,
 	var generateBody: () -> AstBody?,
 	val bodyRef: AstMethodRef? = null,
 	val parameterAnnotations: List<List<AstAnnotation>> = listOf(),
@@ -718,8 +732,10 @@ class AstMethod constructor(
 	containingClass, name, methodType,
 	if (genericSignature != null) containingClass.types.demangleMethod(genericSignature) else methodType,
 	modifiers.isStatic, modifiers.visibility, ref, annotations
-), MethodRef {
+), MethodRef, WithAstModifiersMethod {
 	val types: AstTypes get() = program.types
+
+	var asyncOpt: Boolean? = null
 
 	val parameterAnnotationsList: List<AstAnnotationList> = parameterAnnotations.map { AstAnnotationList(ref, it) }
 
@@ -732,8 +748,6 @@ class AstMethod constructor(
 			println("Invalid method id: $id")
 		}
 	}
-
-	val isNative: Boolean = modifiers.isNative
 
 	private var generatedBody: Boolean = false
 	private var generatedBodyBody: AstBody? = null
@@ -842,8 +856,19 @@ val AstMethodRef.isInstanceInit: Boolean get() = name == "<init>"
 val AstMethodRef.isClassInit: Boolean get() = name == "<clinit>"
 val AstMethodRef.isClassOrInstanceInit: Boolean get() = isInstanceInit || isClassInit
 
+interface WithAstModifiers {
+	val modifiers: AstModifiers
+}
+
+interface WithAstModifiersMember : WithAstModifiers
+interface WithAstModifiersMethod : WithAstModifiersMember
+interface WithAstModifiersField : WithAstModifiersMember
+interface WithAstModifiersParameter : WithAstModifiers
+interface WithAstModifiersClass : WithAstModifiers
+
 @Suppress("unused")
-data class AstModifiers(val acc: Int) {
+data class AstModifiers(val acc: Int) : WithAstModifiersMethod, WithAstModifiersField, WithAstModifiersClass, WithAstModifiersParameter {
+	override val modifiers = this
 	companion object {
 		fun withFlags(vararg flags: Int): AstModifiers {
 			var out = 0
@@ -872,43 +897,6 @@ data class AstModifiers(val acc: Int) {
 		const val ACC_MANDATED = 0x8000        // parameter
 	}
 
-	val isPublic: Boolean get() = acc hasFlag ACC_PUBLIC
-	val isPrivate: Boolean get() = acc hasFlag ACC_PRIVATE
-	val isProtected: Boolean get() = acc hasFlag ACC_PROTECTED
-	val isStatic: Boolean get() = acc hasFlag ACC_STATIC
-	val isFinal: Boolean get() = acc hasFlag ACC_FINAL
-	val isSuper: Boolean get() = acc hasFlag ACC_SUPER
-	val isSynchronized: Boolean get() = acc hasFlag ACC_SYNCHRONIZED
-	val isVolatile: Boolean get() = acc hasFlag ACC_VOLATILE
-	val isBridge: Boolean get() = acc hasFlag ACC_BRIDGE
-	val isVarargs: Boolean get() = acc hasFlag ACC_VARARGS
-	val isTransient: Boolean get() = acc hasFlag ACC_TRANSIENT
-	val isNative: Boolean get() = acc hasFlag ACC_NATIVE
-	val isInterface: Boolean get() = acc hasFlag ACC_INTERFACE
-	val isAbstract: Boolean get() = acc hasFlag ACC_ABSTRACT
-	val isStrict: Boolean get() = acc hasFlag ACC_STRICT
-	val isSynthetic: Boolean get() = acc hasFlag ACC_SYNTHETIC
-	val isAnnotation: Boolean get() = acc hasFlag ACC_ANNOTATION
-	val isEnum: Boolean get() = acc hasFlag ACC_ENUM
-	val isMandated: Boolean get() = acc hasFlag ACC_MANDATED
-	val isConcrete: Boolean get() = !isNative && !isAbstract
-
-	val visibility: AstVisibility get() = if (isPublic) {
-		AstVisibility.PUBLIC
-	} else if (isProtected) {
-		AstVisibility.PROTECTED
-	} else {
-		AstVisibility.PRIVATE
-	}
-
-	val classType: AstClassType get() = if (isInterface) {
-		AstClassType.INTERFACE
-	} else if (isAbstract) {
-		AstClassType.ABSTRACT
-	} else {
-		AstClassType.CLASS
-	}
-
 	fun with(flags: Int) = AstModifiers(this.acc or flags)
 	fun without(flags: Int) = AstModifiers(this.acc and flags.inv())
 
@@ -922,6 +910,38 @@ data class AstModifiers(val acc: Int) {
 	)
 
 	override fun toString(): String = "$acc"
+}
+
+val WithAstModifiers.isPublic: Boolean get() = modifiers.acc hasFlag AstModifiers.ACC_PUBLIC
+val WithAstModifiers.isPrivate: Boolean get() = modifiers.acc hasFlag AstModifiers.ACC_PRIVATE
+val WithAstModifiers.isProtected: Boolean get() = modifiers.acc hasFlag AstModifiers.ACC_PROTECTED
+val WithAstModifiersMember.isStatic: Boolean get() = modifiers.acc hasFlag AstModifiers.ACC_STATIC
+val WithAstModifiers.isFinal: Boolean get() = modifiers.acc hasFlag AstModifiers.ACC_FINAL
+val WithAstModifiersMethod.isSynchronized: Boolean get() = modifiers.acc hasFlag AstModifiers.ACC_SYNCHRONIZED
+val WithAstModifiersField.isVolatile: Boolean get() = modifiers.acc hasFlag AstModifiers.ACC_VOLATILE
+val WithAstModifiersMethod.isBridge: Boolean get() = modifiers.acc hasFlag AstModifiers.ACC_BRIDGE
+val WithAstModifiersMethod.isVarargs: Boolean get() = modifiers.acc hasFlag AstModifiers.ACC_VARARGS
+val WithAstModifiersField.isTransient: Boolean get() = modifiers.acc hasFlag AstModifiers.ACC_TRANSIENT
+val WithAstModifiersMethod.isNative: Boolean get() = modifiers.acc hasFlag AstModifiers.ACC_NATIVE
+val WithAstModifiersMethod.isAbstract: Boolean get() = modifiers.acc hasFlag AstModifiers.ACC_ABSTRACT
+val WithAstModifiersMethod.isStrict: Boolean get() = modifiers.acc hasFlag AstModifiers.ACC_STRICT
+val WithAstModifiers.isSynthetic: Boolean get() = modifiers.acc hasFlag AstModifiers.ACC_SYNTHETIC
+val WithAstModifiersParameter.isMandated: Boolean get() = modifiers.acc hasFlag AstModifiers.ACC_MANDATED
+val WithAstModifiersMethod.isConcrete: Boolean get() = !isNative && !isAbstract
+val WithAstModifiers.visibility: AstVisibility get() = when {
+	isPublic -> AstVisibility.PUBLIC
+	isProtected -> AstVisibility.PROTECTED
+	else -> AstVisibility.PRIVATE
+}
+val WithAstModifiersClass.isSuper: Boolean get() = modifiers.acc hasFlag AstModifiers.ACC_SUPER
+val WithAstModifiersClass.isInterface: Boolean get() = modifiers.acc hasFlag AstModifiers.ACC_INTERFACE
+val WithAstModifiersClass.isAbstract: Boolean get() = modifiers.acc hasFlag AstModifiers.ACC_ABSTRACT
+val WithAstModifiersClass.isAnnotation: Boolean get() = modifiers.acc hasFlag AstModifiers.ACC_ANNOTATION
+val WithAstModifiersClass.isEnum: Boolean get() = modifiers.acc hasFlag AstModifiers.ACC_ENUM
+val WithAstModifiersClass.classType: AstClassType get() = when {
+	isInterface -> AstClassType.INTERFACE
+	isAbstract -> AstClassType.ABSTRACT
+	else -> AstClassType.CLASS
 }
 
 fun ARRAY(type: AstClass) = AstType.ARRAY(type.astType)
@@ -993,27 +1013,41 @@ fun AstType.simplify(): AstType = when (this) {
 	else -> this
 }
 
-fun AstProgram.getLibsFor(target: TargetName): List<String> = this.classes
+fun ifdef(cond: String, defines: Set<String>): Boolean {
+	var invert = false
+	var define: String = cond.trim()
+	return if (define.isEmpty()) {
+		true
+	} else {
+		while (define.startsWith("!")) {
+			define = define.substr(1)
+			invert = !invert
+		}
+		(define in defines) xor invert
+	}
+}
+
+fun AstProgram.getLibsFor(target: TargetName, defines: Set<String> = setOf()): List<String> = this.classes
 	.flatMap { it.annotationsList.getTypedList(JTranscAddLibrariesList::value) }
-	.filter { target.matches(it.target) }
+	.filter { target.matches(it.target) && ifdef(it.cond, defines) }
 	.flatMap { it.value.toList() }
 	.distinct()
 
-fun AstProgram.getIncludesFor(target: TargetName): List<String> = this.classes
+fun AstProgram.getIncludesFor(target: TargetName, defines: Set<String> = setOf()): List<String> = this.classes
 	.flatMap { it.annotationsList.getTypedList(JTranscAddIncludesList::value) }
-	.filter { target.matches(it.target) }
+	.filter { target.matches(it.target) && ifdef(it.cond, defines) }
 	.flatMap { it.value.toList() }
 	.distinct()
 
-fun AstProgram.getDefinesFor(target: TargetName): List<String> = this.classes
+fun AstProgram.getDefinesFor(target: TargetName, defines: Set<String> = setOf()): List<String> = this.classes
 	.flatMap { it.annotationsList.getTypedList(JTranscAddDefinesList::value) }
-	.filter { target.matches(it.target) }
+	.filter { target.matches(it.target) && ifdef(it.cond, defines) }
 	.flatMap { it.value.toList() }
 	.distinct()
 
-fun AstProgram.getImportsFor(target: TargetName): List<String> = this.classes
+fun AstProgram.getImportsFor(target: TargetName, defines: Set<String> = setOf()): List<String> = this.classes
 	.flatMap { it.annotationsList.getTypedList(JTranscAddImportsList::value) }
-	.filter { target.matches(it.target) }
+	.filter { target.matches(it.target) && ifdef(it.cond, defines) }
 	.flatMap { it.value.toList() }
 	.distinct()
 
@@ -1024,9 +1058,14 @@ fun AstClass.getMembersFor(target: TargetName): List<CondMembers> = this.annotat
 	.map { CondMembers(it.cond, it.value.toList()) }
 	.distinct()
 
-fun AstProgram.getTemplateVariables(target: TargetName, extraVars: Map<String, List<String>> = mapOf()): Map<String, List<String>> = this.classes
-	.flatMap { it.annotationsList.getTypedList(JTranscAddTemplateVarsList::value) }
-	.filter { target.matches(it.target) }
-	.groupBy { it.variable }
-	.map { (key, value) -> key to (value.flatMap { it.list.toList() } + (extraVars[key] ?: listOf())) }
-	.toMap()
+
+fun AstProgram.getTemplateVariables(target: TargetName, extraVars: Map<String, List<String>> = mapOf()): Map<String, List<String>> {
+	val annotationsExtraVars = this.classes
+		.flatMap { it.annotationsList.getTypedList(JTranscAddTemplateVarsList::value) }
+		.filter { target.matches(it.target) }
+		.groupBy { it.variable }
+		.map { (key, value) -> key to value.flatMap { it.list.toList() } }
+		.toMap()
+
+	return annotationsExtraVars.combinedWith(extraVars)
+}

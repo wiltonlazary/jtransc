@@ -16,6 +16,11 @@
 
 package java.lang.reflect;
 
+import com.jtransc.annotation.JTranscAsync;
+import com.jtransc.annotation.JTranscKeep;
+import com.jtransc.annotation.JTranscSync;
+import com.jtransc.ds.FastIntMap;
+import com.jtransc.io.JTranscConsole;
 import j.MemberInfo;
 import j.ProgramReflection;
 
@@ -29,16 +34,37 @@ public final class Field extends AccessibleObject implements Member {
 	//private Class<?> type = null;
 	protected int modifiers;
 	public int slot;
+
 	public transient String signature;
 	public transient String genericSignature;
 	public byte[] annotations;
 	//private transient FieldRepository genericInfo;
 
+	private static final FastIntMap<FastIntMap<Annotation[]>> _annotationsCache = new FastIntMap<FastIntMap<Annotation[]>>();
+
+	@JTranscSync
 	public Annotation[] getDeclaredAnnotations() {
-		Annotation[] out = ProgramReflection.getFieldAnnotations(clazz.id, info.id);
-		return (out != null) ? out : new Annotation[0];
+		Annotation[] cache;
+		FastIntMap<Annotation[]> map = _annotationsCache.get(clazz.id);
+		if (map != null) {
+			cache = map.get(info.id);
+			if (cache != null) {
+				return cache;
+			}
+		}
+		if (map == null) {
+			map = new FastIntMap<Annotation[]>();
+			_annotationsCache.set(clazz.id, map);
+		}
+		cache = ProgramReflection.getFieldAnnotations(clazz.id, info.id);
+		if (cache == null) {
+			cache = new Annotation[0];
+		}
+		map.set(info.id, cache);
+		return cache;
 	}
 
+	@JTranscSync
 	public Field(Class<?> containingClass, MemberInfo info) {
 		super(info);
 		this.clazz = containingClass;
@@ -49,41 +75,54 @@ public final class Field extends AccessibleObject implements Member {
 		this.modifiers = info.modifiers;
 	}
 
+	@JTranscSync
 	public Field() {
 	}
 
+	@JTranscSync
 	public Class<?> getDeclaringClass() {
 		return clazz;
 	}
 
+	@JTranscSync
 	public String getName() {
 		return name;
 	}
 
+	@JTranscSync
 	public int getModifiers() {
 		return modifiers;
 	}
 
+	@JTranscSync
 	public boolean isEnumConstant() {
 		return (getModifiers() & Modifier.ENUM) != 0;
 	}
 
+	@JTranscSync
 	public boolean isSynthetic() {
 		return (getModifiers() & Modifier.SYNTHETIC) != 0;
 	}
 
+	@JTranscSync
+	boolean isStatic() {
+		return (getModifiers() & Modifier.STATIC) != 0;
+	}
+
+	@JTranscSync
 	public Class<?> getType() {
 		//return type;
 		try {
 			return Class.forName(signature);
 		} catch (ClassNotFoundException e) {
-			e.printStackTrace();
+			JTranscConsole.syncPrintStackTrace(e);
 		}
 		return null;
 	}
 
 	private Type genericType;
 
+	@JTranscSync
 	public Type getGenericType() {
 		if (genericType == null) {
 			if (genericSignature != null) {
@@ -95,6 +134,7 @@ public final class Field extends AccessibleObject implements Member {
 		return genericType;
 	}
 
+	@JTranscSync
 	public boolean equals(Object obj) {
 		/*
 		if (obj != null && obj instanceof Field) {
@@ -106,15 +146,19 @@ public final class Field extends AccessibleObject implements Member {
 		return this == obj;
 	}
 
+	@JTranscSync
 	public int hashCode() {
 		return getDeclaringClass().getName().hashCode() ^ getName().hashCode();
 	}
 
+	//@JTranscSync
+	@JTranscAsync
 	public String toString() {
 		int mod = getModifiers();
 		return (((mod == 0) ? "" : (Modifier.toString(mod) + " ")) + _InternalUtils.getTypeName(getType()) + " " + _InternalUtils.getTypeName(getDeclaringClass()) + "." + getName());
 	}
 
+	@JTranscSync
 	public Object get(Object obj) throws IllegalArgumentException, IllegalAccessException {
 		Class<?> type = getType();
 		if (type == null) {
@@ -135,10 +179,12 @@ public final class Field extends AccessibleObject implements Member {
 		}
 	}
 
+	@JTranscSync
 	private void _setObject(Object obj, Object value) throws IllegalArgumentException, IllegalAccessException {
 		ProgramReflection.dynamicSet(this.clazz.id, slot, obj, value);
 	}
 
+	@JTranscSync
 	public Object _getObject(Object obj) throws IllegalArgumentException, IllegalAccessException {
 		return ProgramReflection.dynamicGet(this.clazz.id, slot, obj);
 	}
@@ -146,34 +192,42 @@ public final class Field extends AccessibleObject implements Member {
 	////////////////////////////////////////////////////////////
 	////////////////////////////////////////////////////////////
 
+	@JTranscSync
 	public boolean getBoolean(Object obj) throws IllegalArgumentException, IllegalAccessException {
 		return (Boolean) get(obj);
 	}
 
+	@JTranscSync
 	public byte getByte(Object obj) throws IllegalArgumentException, IllegalAccessException {
 		return (Byte) get(obj);
 	}
 
+	@JTranscSync
 	public char getChar(Object obj) throws IllegalArgumentException, IllegalAccessException {
 		return (Character) get(obj);
 	}
 
+	@JTranscSync
 	public short getShort(Object obj) throws IllegalArgumentException, IllegalAccessException {
 		return (Short) get(obj);
 	}
 
+	@JTranscSync
 	public int getInt(Object obj) throws IllegalArgumentException, IllegalAccessException {
 		return (Integer) get(obj);
 	}
 
+	@JTranscSync
 	public long getLong(Object obj) throws IllegalArgumentException, IllegalAccessException {
 		return (Long) get(obj);
 	}
 
+	@JTranscSync
 	public float getFloat(Object obj) throws IllegalArgumentException, IllegalAccessException {
 		return (Float) get(obj);
 	}
 
+	@JTranscSync
 	public double getDouble(Object obj) throws IllegalArgumentException, IllegalAccessException {
 		return (Double) get(obj);
 	}
@@ -183,8 +237,10 @@ public final class Field extends AccessibleObject implements Member {
 	//native private void _setUnboxed(Object obj, Object value) throws IllegalArgumentException, IllegalAccessException;
 
 	//@HaxeMethodBody("return N.str(this._internalName);")
+	@JTranscSync
 	native String getInternalName();
 
+	@JTranscSync
 	public void set(Object obj, Object value) throws IllegalArgumentException, IllegalAccessException {
 		Class<?> type = getType();
 		if (type == null) {
@@ -212,38 +268,47 @@ public final class Field extends AccessibleObject implements Member {
 		}
 	}
 
+	@JTranscSync
 	public void setBoolean(Object obj, boolean v) throws IllegalArgumentException, IllegalAccessException {
 		set(obj, v);
 	}
 
+	@JTranscSync
 	public void setByte(Object obj, byte v) throws IllegalArgumentException, IllegalAccessException {
 		set(obj, v);
 	}
 
+	@JTranscSync
 	public void setChar(Object obj, char v) throws IllegalArgumentException, IllegalAccessException {
 		set(obj, v);
 	}
 
+	@JTranscSync
 	public void setShort(Object obj, short v) throws IllegalArgumentException, IllegalAccessException {
 		set(obj, v);
 	}
 
+	@JTranscSync
 	public void setInt(Object obj, int v) throws IllegalArgumentException, IllegalAccessException {
 		set(obj, v);
 	}
 
+	@JTranscSync
 	public void setLong(Object obj, long v) throws IllegalArgumentException, IllegalAccessException {
 		set(obj, v);
 	}
 
+	@JTranscSync
 	public void setFloat(Object obj, float v) throws IllegalArgumentException, IllegalAccessException {
 		set(obj, v);
 	}
 
+	@JTranscSync
 	public void setDouble(Object obj, double v) throws IllegalArgumentException, IllegalAccessException {
 		set(obj, v);
 	}
 
+	@JTranscSync
 	public <T extends Annotation> T getAnnotation(Class<T> annotationClass) {
 		return super.getAnnotation(annotationClass);
 	}

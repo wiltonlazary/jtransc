@@ -23,6 +23,7 @@ open class AbstractJTranscGradleTask : DefaultTask() {
 	var minimizedNames: Boolean? = null
 	var relooper: Boolean? = null
 	var debug: Boolean? = null
+	var optimize: Boolean? = null
 	var compile: Boolean? = null
 	var treeshaking: Boolean? = null
 	var treeshakingTrace: Boolean? = null
@@ -49,7 +50,7 @@ open class AbstractJTranscGradleTask : DefaultTask() {
 	var skipServiceLoaderClasses: ArrayList<String> = arrayListOf()
 
 	fun skipServiceLoader(serviceLoader: String) = skipServiceLoaderClasses.add(serviceLoader)
-	val types: AstTypes = AstTypes()
+	//val types: AstTypes by lazy { AstTypes() }
 	fun assets(vararg folders: String) = run { newAssets += folders.map { File(project.buildFile.parentFile, it) } }
 	fun param(key: String, value: String?) = run { extra[key] = value }
 	fun param(key: String) = param(key, "true")
@@ -87,14 +88,17 @@ open class AbstractJTranscGradleTask : DefaultTask() {
 		//println(project.property("output.classesDir"))
 		val sourceSet = project.property("sourceSets") as SourceSetContainer
 		val mainSourceSet = sourceSet["main"]
-		val classesDir = mainSourceSet.output.classesDir
-		logger.info("output classesDir: $classesDir")
+		val classesDirs = mainSourceSet.output.classesDirs
+		//val classesDirs = listOf(mainSourceSet.output.classesDir)
+		logger.info("output classesDir: ${classesDirs.joinToString(", ")}")
 		logger.info("sourceSet: $sourceSet")
 		logger.info("mainClassName: $mainClassName")
 
 		//println("mainSourceSet.output.asPath:" + mainSourceSet.)
 
 		val default = AstBuildSettings.DEFAULT
+
+		val rtarget = target ?: extension.target ?: "haxe:js"
 
 		val settings = AstBuildSettings(
 			jtranscVersion = JTranscVersion.getVersion(),
@@ -117,6 +121,7 @@ open class AbstractJTranscGradleTask : DefaultTask() {
 			orientation = AstBuildSettings.Orientation.fromString(orientation ?: extension.orientation ?: default.orientation.name),
 			relooper = relooper ?: extension.relooper ?: default.relooper,
 			analyzer = analyzer ?: extension.analyzer ?: default.analyzer,
+			optimize = optimize ?: extension.optimize ?: default.optimize,
 			extra = extra + extension.extra,
 			extraVars = extraVars.mergeMapListWith(extension.extraVars),
 			rtAndRtCore = runtimeConfiguration.files.map { it.absolutePath }
@@ -135,7 +140,8 @@ open class AbstractJTranscGradleTask : DefaultTask() {
 			skipServiceLoaderClasses + extension.skipServiceLoaderClasses
 		))
 
-		val files = listOf(File(classesDir.absolutePath)) + jtranscConfiguration.files + compileConfiguration.files + mainSourceSet.resources.srcDirs.toList()
+
+		val files = classesDirs.map { File(it.absolutePath) } + jtranscConfiguration.files + compileConfiguration.files + mainSourceSet.resources.srcDirs.toList()
 		val actualFiles = files - blacklist
 
 		injector.mapInstances(ConfigClassPaths(actualFiles.map { it.absolutePath }))
@@ -148,7 +154,7 @@ open class AbstractJTranscGradleTask : DefaultTask() {
 			injector,
 			entryPoint = mainClassName,
 			//AllBuildTargets = AllBuildTargets,
-			target = target ?: extension.target ?: "haxe:js",
+			target = rtarget,
 			output = outputFile ?: extension.output,
 			settings = settings,
 			targetDirectory = buildDir.absolutePath
@@ -159,7 +165,7 @@ open class AbstractJTranscGradleTask : DefaultTask() {
 
 	fun afterBuild(build: JTranscBuild) {
 		val extra = project.extensions.findByType(ExtraPropertiesExtension::class.java)
-		extra.set("JTRANSC_LIBS", build.injector.get<ConfigLibraries>().libs)
+		extra?.set("JTRANSC_LIBS", build.injector.get<ConfigLibraries>().libs)
 		//project.properties["JTRANSC_LIBS"] =
 		//project.setProperty("JTRANSC_LIBS", build.injector.get<ConfigLibraries>().libs)
 	}

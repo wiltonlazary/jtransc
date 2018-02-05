@@ -16,8 +16,6 @@
  */
 package java.util;
 
-import java.net.URL;
-
 @SuppressWarnings("unchecked")
 public final class ServiceLoader<S> implements Iterable<S> {
 	private final Class<S> service;
@@ -26,7 +24,7 @@ public final class ServiceLoader<S> implements Iterable<S> {
 	private ServiceLoader(Class<S> service) {
 		Objects.requireNonNull(service);
 		this.service = service;
-		this.list = (List<S>)Arrays.asList(getInstances(service.getName()));
+		this.list = (List<S>) Arrays.asList(getInstances(service.getName()));
 		reload();
 	}
 
@@ -43,12 +41,13 @@ public final class ServiceLoader<S> implements Iterable<S> {
 	}
 
 	public static <S> ServiceLoader<S> load(Class<S> service, ClassLoader classLoader) {
-		if (classLoader == null) classLoader = ClassLoader.getSystemClassLoader();
-		return new ServiceLoader<S>(service);
+		return load(service);
 	}
 
 	public static <S> ServiceLoader<S> load(Class<S> service) {
-		return ServiceLoader.load(service, Thread.currentThread().getContextClassLoader());
+		//return ServiceLoader.load(service, Thread.currentThread().getContextClassLoader());
+		//if (classLoader == null) classLoader = ClassLoader.getSystemClassLoader();
+		return new ServiceLoader<S>(service);
 	}
 
 	public static <S> ServiceLoader<S> loadInstalled(Class<S> service) {

@@ -57,7 +57,6 @@ open class AstVisitor {
 			is AstStm.SET_ARRAY_LITERALS -> visit(stm)
 			is AstStm.SET_FIELD_STATIC -> visit(stm)
 			is AstStm.SET_FIELD_INSTANCE -> visit(stm)
-			is AstStm.SET_NEW_WITH_CONSTRUCTOR -> visit(stm)
 			is AstStm.IF -> visit(stm)
 			is AstStm.IF_ELSE -> visit(stm)
 			is AstStm.WHILE -> visit(stm)
@@ -95,6 +94,7 @@ open class AstVisitor {
 			is AstExpr.BINOP -> visit(expr)
 			is AstExpr.UNOP -> visit(expr)
 			is AstExpr.CALL_BASE -> visit(expr)
+			is AstExpr.CONCAT_STRING -> visit(expr)
 			is AstExpr.ARRAY_LENGTH -> visit(expr)
 			is AstExpr.ARRAY_ACCESS -> visit(expr)
 			is AstExpr.FIELD_INSTANCE_ACCESS -> visit(expr)
@@ -102,14 +102,17 @@ open class AstVisitor {
 			is AstExpr.INSTANCE_OF -> visit(expr)
 			is AstExpr.CAST -> visit(expr)
 			is AstExpr.CHECK_CAST -> visit(expr)
-			is AstExpr.NEW -> visit(expr)
 			is AstExpr.NEW_WITH_CONSTRUCTOR -> visit(expr)
 			is AstExpr.NEW_ARRAY -> visit(expr)
 			is AstExpr.INTARRAY_LITERAL -> visit(expr)
-			is AstExpr.STRINGARRAY_LITERAL -> visit(expr)
+			is AstExpr.OBJECTARRAY_LITERAL -> visit(expr)
 			is AstExpr.TERNARY -> visit(expr)
 			else -> noImpl("$expr")
 		}
+	}
+
+	open fun visit(expr: AstExpr.CONCAT_STRING) {
+		for (arg in expr.args) visit(arg)
 	}
 
 	open fun visit(expr: AstExpr.CALL_BASE) {
@@ -259,13 +262,6 @@ open class AstVisitor {
 		visit(stm.expr)
 	}
 
-	open fun visit(stm: AstStm.SET_NEW_WITH_CONSTRUCTOR) {
-		visit(stm.local)
-		visit(stm.method)
-		visit(stm.target)
-		visitExprsBox(stm.args)
-	}
-
 	open fun visit(stm: AstStm.BREAK) {
 	}
 
@@ -379,11 +375,6 @@ open class AstVisitor {
 		visit(expr.type)
 	}
 
-	open fun visit(expr: AstExpr.NEW) {
-		visit(expr.target)
-		visit(expr.type)
-	}
-
 	open fun visit(expr: AstExpr.NEW_WITH_CONSTRUCTOR) {
 		visit(expr.target)
 		visit(expr.type)
@@ -400,7 +391,7 @@ open class AstVisitor {
 		//visitExprs(expr.values)
 	}
 
-	open fun visit(expr: AstExpr.STRINGARRAY_LITERAL) {
+	open fun visit(expr: AstExpr.OBJECTARRAY_LITERAL) {
 		visit(expr.arrayType)
 		//visitExprs(expr.values)
 	}

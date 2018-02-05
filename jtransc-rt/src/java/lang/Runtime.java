@@ -16,15 +16,20 @@
 
 package java.lang;
 
+import com.jtransc.annotation.JTranscAddHeader;
 import com.jtransc.annotation.JTranscMethodBody;
 import com.jtransc.annotation.haxe.HaxeMethodBody;
+import com.jtransc.io.JTranscConsole;
 
 import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.util.HashSet;
+import java.util.Set;
 import java.util.StringTokenizer;
 
+@JTranscAddHeader(target = "as3", value = "import flash.system.System;")
 public class Runtime {
 	private static Runtime current;
 
@@ -49,9 +54,36 @@ public class Runtime {
 	@JTranscMethodBody(target = "php", value = "exit($p0);")
 	native public void exit(int status);
 
-	native public void addShutdownHook(Thread hook);
+	private Set<Thread> shutdownThreads = null;
 
-	native public boolean removeShutdownHook(Thread hook);
+	private void _executeShutdownHooks() {
+		if (shutdownThreads != null) {
+			for (Thread shutdownThread : shutdownThreads) {
+				shutdownThread.run();
+			}
+		}
+	}
+
+	@JTranscMethodBody(target = "js", value = "var that = this; process.on('exit', function() { that{% IMETHOD java.lang.Runtime:_executeShutdownHooks %}({{ JC }}); });")
+	private void _registerShutdownHook() {
+	}
+
+	private void _registerShutdownHookOnce() {
+		if (shutdownThreads != null) return;
+		shutdownThreads = new HashSet<>();
+		_registerShutdownHook();
+	}
+
+	public void addShutdownHook(Thread hook) {
+		_registerShutdownHookOnce();
+		if (shutdownThreads != null) {
+			shutdownThreads.add(hook);
+		}
+	}
+
+	public boolean removeShutdownHook(Thread hook) {
+		return shutdownThreads != null && shutdownThreads.remove(hook);
+	}
 
 	public void halt(int status) {
 		exit(status);
@@ -95,23 +127,30 @@ public class Runtime {
 	@JTranscMethodBody(target = "cpp", value = "return GC_get_free_bytes();")
 	@JTranscMethodBody(target = "php", value = "return N::d2j((float)0.0);")
 	public long freeMemory() {
-		return 8 * 1024 * 1024 * 1024L;
+		return totalMemory() - _usedMemory();
 	}
 
 	@JTranscMethodBody(target = "cpp", value = "return GC_get_total_bytes();")
 	@JTranscMethodBody(target = "php", value = "return N::d2j((float)memory_get_peak_usage());")
+	@HaxeMethodBody(target = "cpp", value = "return cpp.vm.Gc.memInfo(1);")
 	public long totalMemory() {
 		return 8 * 1024 * 1024 * 1024L;
 	}
 
 	@JTranscMethodBody(target = "cpp", value = "return GC_get_total_bytes();")
 	@JTranscMethodBody(target = "php", value = "return N::d2j((float)memory_get_usage());")
+	@HaxeMethodBody(target = "cpp", value = "return cpp.vm.Gc.memInfo(1);")
 	public long maxMemory() {
 		return 8 * 1024 * 1024 * 1024L;
 	}
 
-	@JTranscMethodBody(target = "as3", value = "return flash.system.System.gc();")
-	@JTranscMethodBody(target = "cpp", value = "return GC_gcollect();")
+	@HaxeMethodBody(target = "cpp", value = "return cpp.vm.Gc.memInfo(2);")
+	private static long _usedMemory() {
+		return 8 * 1024 * 1024 * 1024L;
+	}
+
+	@JTranscMethodBody(target = "as3", value = "System.gc();")
+	@JTranscMethodBody(target = "cpp", value = "GC_gcollect();")
 	@JTranscMethodBody(target = "php", value = "gc_collect_cycles();")
 	public void gc() {
 	}

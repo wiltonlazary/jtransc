@@ -3,6 +3,7 @@ package com.jtransc.ast
 import com.jtransc.ds.cast
 import com.jtransc.error.invalidOp
 import com.jtransc.error.noImpl
+import com.jtransc.gen.TargetName
 import kotlin.reflect.KProperty
 
 data class AstBody constructor(
@@ -15,18 +16,19 @@ data class AstBody constructor(
 ) {
 	private var _locals: List<AstLocal>? = null
 
-	val locals: List<AstLocal> get() {
-		if (_locals == null) {
-			val locals = hashSetOf<AstLocal>()
-			(object : AstVisitor() {
-				override fun visit(local: AstLocal) {
-					locals += local
-				}
-			}).visit(stm)
-			_locals = locals.toList()
+	val locals: List<AstLocal>
+		get() {
+			if (_locals == null) {
+				val locals = hashSetOf<AstLocal>()
+				(object : AstVisitor() {
+					override fun visit(local: AstLocal) {
+						locals += local
+					}
+				}).visit(stm)
+				_locals = locals.toList()
+			}
+			return _locals!!
 		}
-		return _locals!!
-	}
 
 	fun invalidateLocals() {
 		_locals = null
@@ -101,6 +103,7 @@ data class AstLocal(val index: Int, override val name: String, val type: AstType
 	val isUsed: Boolean get() = (writesCount != 0) || (readCount != 0)
 	fun write(set: AstStm.SET_LOCAL) = run { writes += set }
 	fun read(ref: AstExpr.LOCAL) = run { reads += ref }
+	var ahead: Boolean = false
 }
 
 fun AstType.local(name: String, index: Int = 0) = AstExpr.LOCAL(AstLocal(index, name, this))
@@ -186,7 +189,7 @@ sealed class AstStm : AstElement, Cloneable<AstStm> {
 	}
 
 	class SET_NEW_WITH_CONSTRUCTOR(val local: AstExpr.LocalExpr, val target: AstType.REF, val method: AstMethodRef, args: List<AstExpr>) : AstStm() {
-		val args = args.map { it.box }
+		val args = args.boxes
 	}
 
 	class IF(cond: AstExpr, strue: AstStm) : AstStm() {
@@ -297,6 +300,8 @@ fun AstStm?.isBreakingFlow() = when (this) {
 }
 
 abstract class AstExpr : AstElement, Cloneable<AstExpr> {
+	companion object
+
 	class Box(_value: AstExpr) {
 		var value: AstExpr = _value
 			set(value) {
@@ -355,7 +360,11 @@ abstract class AstExpr : AstElement, Cloneable<AstExpr> {
 
 	class TYPED_LOCAL(local: AstLocal, type: AstType) : LOCAL_BASE(local, type)
 
-	class LOCAL(local: AstLocal) : LOCAL_BASE(local, local.type)
+	class LOCAL(local: AstLocal) : LOCAL_BASE(local, local.type) {
+		//var ahead: Boolean = false
+	}
+
+	class RAW(override val type: AstType, val content: String) : AstExpr()
 
 	class PARAM(val argument: AstArgument) : LocalExpr() {
 		override val name: String get() = argument.name
@@ -415,17 +424,25 @@ abstract class AstExpr : AstElement, Cloneable<AstExpr> {
 		abstract val method: AstMethodRef
 		abstract val args: List<AstExpr.Box>
 		abstract val isSpecial: Boolean
+
+		abstract fun withReplacedMethod(method: AstMethodRef): CALL_BASE
 	}
 
 	abstract class CALL_BASE_OBJECT : CALL_BASE() {
 		abstract val obj: AstExpr.Box
 	}
 
+	class CONCAT_STRING(val original: AstExpr, val args: List<AstExpr>) : AstExpr() {
+		override val type: AstType = AstType.STRING
+	}
+
 	class CALL_INSTANCE(obj: AstExpr, override val method: AstMethodRef, args: List<AstExpr>, override val isSpecial: Boolean = false) : CALL_BASE_OBJECT() {
 		override val obj = obj.box
-		override val args = args.map { it.box }
+		override val args = args.boxes
 
 		override val type = method.type.ret
+
+		override fun withReplacedMethod(method: AstMethodRef) = CALL_INSTANCE(obj.value, method, args.unbox, isSpecial)
 	}
 
 	//class CALL_SPECIAL(obj: AstExpr, override val method: AstMethodRef, args: List<AstExpr>, override val isSpecial: Boolean = false) : CALL_BASE() {
@@ -440,6 +457,8 @@ abstract class AstExpr : AstElement, Cloneable<AstExpr> {
 		override val args = args.map { it.box }
 
 		override val type = method.type.ret
+
+		override fun withReplacedMethod(method: AstMethodRef) = CALL_SUPER(obj.value, target, method, args.unbox, isSpecial)
 	}
 
 	class CALL_STATIC(val clazz: AstType.REF, override val method: AstMethodRef, args: List<AstExpr>, override val isSpecial: Boolean = false) : CALL_BASE() {
@@ -448,6 +467,8 @@ abstract class AstExpr : AstElement, Cloneable<AstExpr> {
 		override val args = args.map { it.box }
 		//val clazz: AstType.REF = method.classRef.type
 		override val type = method.type.ret
+
+		override fun withReplacedMethod(method: AstMethodRef) = CALL_STATIC(method.containingClassType, method, args.unbox, isSpecial)
 	}
 
 	class ARRAY_LENGTH(array: AstExpr) : AstExpr() {
@@ -492,10 +513,6 @@ abstract class AstExpr : AstElement, Cloneable<AstExpr> {
 		override fun clone(): AstExpr = CHECK_CAST(subject.value.clone(), to, dummy = true)
 	}
 
-	class NEW(val target: AstType.REF) : AstExpr() {
-		override val type = target
-	}
-
 	class NEW_WITH_CONSTRUCTOR(val constructor: AstMethodRef, args: List<AstExpr>) : AstExpr() {
 		val target: AstType.REF = constructor.containingClassType
 		val args = args.map { it.box }
@@ -512,7 +529,7 @@ abstract class AstExpr : AstElement, Cloneable<AstExpr> {
 		override val type = arrayType
 	}
 
-	class STRINGARRAY_LITERAL(val values: List<String>) : AstExpr() {
+	class OBJECTARRAY_LITERAL(val values: List<AstExpr>, val kind: AstType) : AstExpr() {
 		val arrayType: AstType.ARRAY = AstType.ARRAY(AstType.STRING)
 		override val type = arrayType
 	}
@@ -546,6 +563,7 @@ abstract class AstExpr : AstElement, Cloneable<AstExpr> {
 
 val List<AstExpr.Box>.exprs: List<AstExpr> get() = this.map { it.value }
 val List<AstExpr>.boxes: List<AstExpr.Box> get() = this.map { it.box }
+val List<AstExpr.Box>.unbox: List<AstExpr> get() = this.map { it.value }
 
 fun AstExpr.LOCAL.setTo(value: AstExpr): AstStm.SET_LOCAL {
 	val stm = AstStm.SET_LOCAL(this, value.castTo(this.type), dummy = true)
@@ -581,11 +599,10 @@ fun AstExpr.isPure(): Boolean = when (this) {
 	is AstExpr.LITERAL -> true
 	is AstExpr.LOCAL -> true
 	is AstExpr.TYPED_LOCAL -> true
-	is AstExpr.NEW -> false
 	is AstExpr.NEW_WITH_CONSTRUCTOR -> false
 	is AstExpr.NEW_ARRAY -> true
 	is AstExpr.INTARRAY_LITERAL -> true
-	is AstExpr.STRINGARRAY_LITERAL -> true
+	is AstExpr.OBJECTARRAY_LITERAL -> true
 	is AstExpr.PARAM -> true
 	is AstExpr.THIS -> true
 	else -> {
@@ -721,7 +738,7 @@ object AstExprUtils {
 		val clazz = program.get3(e.method.classRef)
 		val refMethod = program.get(e.method) ?: invalidOp("Can't find method: ${e.method} while generating $context")
 		// https://docs.oracle.com/javase/specs/jvms/se7/html/jvms-6.html#jvms-6.5.invokespecial
-		return if (refMethod.modifiers.isPrivate || refMethod.isInstanceInit) {
+		return if (refMethod.isPrivate || refMethod.isInstanceInit) {
 			// Call this!
 			AstExpr.CALL_INSTANCE(e.obj.value, e.method, e.args.map { it.value }, e.isSpecial)
 		} else {
@@ -753,6 +770,7 @@ open class BuilderBase(val types: AstTypes) {
 fun AstType.array() = AstType.ARRAY(this)
 fun AstType.ARRAY.newArray(size: AstExpr) = AstExpr.NEW_ARRAY(this, listOf(size))
 fun AstType.ARRAY.newArray(size: Int) = this.newArray(size.lit)
+fun AstType.ARRAY.newLiteralArray(items: List<AstExpr>) = AstExpr.OBJECTARRAY_LITERAL(items, this)
 
 fun AstMethodRef.newInstance(vararg args: AstExpr) = AstExpr.NEW_WITH_CONSTRUCTOR(this, args.toList())
 
@@ -787,13 +805,14 @@ operator fun AstExpr.get(field: AstFieldRef) = AstExpr.FIELD_INSTANCE_ACCESS(fie
 operator fun AstExpr.get(method: MethodRef) = MethodWithRef(this, method.ref)
 operator fun AstLocal.get(method: MethodRef) = MethodWithRef(this.expr, method.ref)
 
-val AstStm.stms: List<AstStm> get() {
-	return if (this is AstStm.STMS) {
-		this.stms.map { it.value }
-	} else {
-		listOf(this)
+val AstStm.stms: List<AstStm>
+	get() {
+		return if (this is AstStm.STMS) {
+			this.stms.map { it.value }
+		} else {
+			listOf(this)
+		}
 	}
-}
 
 val Iterable<AstStm>.stms: AstStm get() = this.toList().stm()
 fun AstExpr.not() = AstExpr.UNOP(AstUnop.NOT, this)
@@ -897,9 +916,9 @@ class AstBuilder2(types: AstTypes, val ctx: AstBuilderBodyCtx) : BuilderBase(typ
 		}
 	}
 
-	fun RETURN() = Unit.apply { stms += AstStm.RETURN_VOID() }
-	fun RETURN(value: AstExpr) = Unit.apply { stms += AstStm.RETURN(value) }
-	fun RETURN(value: AstLocal) = Unit.apply { stms += AstStm.RETURN(value.expr) }
+	fun RETURN() = run { stms += AstStm.RETURN_VOID() }
+	fun RETURN(value: AstExpr) = run { stms += AstStm.RETURN(value) }
+	fun RETURN(value: AstLocal) = run { stms += AstStm.RETURN(value.expr) }
 
 	fun genstm(): AstStm = stms.stm()
 }

@@ -14,6 +14,9 @@ import j.ProgramReflection
  */
 class MetaReflectionJTranscPlugin : JTranscPlugin() {
 	override val priority: Int = Int.MAX_VALUE - 1000
+	companion object {
+		const val CASES_PER_SWITCH: Int = 100
+	}
 
 	fun AstClass.mustReflect(invisibleExternalSet: Set<String> = setOf()): Boolean {
 		return this.visible && (this.fqname !in invisibleExternalSet) && (this.annotationsList.getNativeNameForTarget(targetName) == null)
@@ -33,6 +36,7 @@ class MetaReflectionJTranscPlugin : JTranscPlugin() {
 		val ProgramReflectionClass = program[ProgramReflection::class.java.fqname]
 
 		val annotationFqname = "java.lang.annotation.Annotation".fqname
+		val annotationType = AstType.REF(annotationFqname)
 		val classesForAnnotations = hashMapOf<AstType.REF, AstClass>()
 
 		fun getAnnotationProxyClass(annotationType: AstType.REF): AstClass {
@@ -55,18 +59,18 @@ class MetaReflectionJTranscPlugin : JTranscPlugin() {
 						if (ref == annotationTypeMR) continue
 						if (ref == getClassMR) continue
 						if (ref == toStringMR) continue
-						createMethod(m.name, m.methodType) {
+						createMethod(m.name, m.methodType, asyncOpt = false) {
 							extraVisible = false
 							RETURN(THIS[locateField(m.name)!!])
 						}
 					}
-					createMethod(annotationTypeMR.name, annotationTypeMR.type) {
+					createMethod(annotationTypeMR.name, annotationTypeMR.type, asyncOpt = false) {
 						RETURN(annotationType.lit)
 					}
-					createMethod(getClassMR.name, getClassMR.type) {
+					createMethod(getClassMR.name, getClassMR.type, asyncOpt = false) {
 						RETURN(annotationType.lit)
 					}
-					createMethod(toStringMR.name, toStringMR.type) {
+					createMethod(toStringMR.name, toStringMR.type, asyncOpt = null) {
 						val appendObject = AstMethodRef(StringBuilder::class.java.fqname, "append", AstType.METHOD(AstType.STRINGBUILDER, listOf(AstType.OBJECT)))
 						val toString = AstMethodRef(java.lang.Object::class.java.fqname, "toString", AstType.METHOD(AstType.STRING, listOf()))
 
@@ -160,21 +164,24 @@ class MetaReflectionJTranscPlugin : JTranscPlugin() {
 			val (classIdArg) = args
 
 			val temps = TempAstLocalFactory()
-			val outLocal = AstLocal(0, "out", ANNOTATION_ARRAY)
 
-			SWITCH(classIdArg.expr) {
-				for (clazz in visibleClasses) {
-					val annotations = clazz.runtimeAnnotations
-					if (annotations.isNotEmpty() && "java.lang.annotation.Annotation".fqname !in clazz.implementing) {
+			val cleanVisibleClasses = visibleClasses.filter { it.runtimeAnnotations.isNotEmpty() && "java.lang.annotation.Annotation".fqname !in it.implementing }
+
+			var switchIndex: Int = 0
+			while (switchIndex * CASES_PER_SWITCH < cleanVisibleClasses.size) {
+				SWITCH(classIdArg.expr) {
+					var caseIndex: Int = 0
+					while (caseIndex < CASES_PER_SWITCH && (switchIndex * CASES_PER_SWITCH + caseIndex) < cleanVisibleClasses.size) {
+						val clazz = cleanVisibleClasses[switchIndex * CASES_PER_SWITCH + caseIndex]
 						CASE(clazz.classId) {
-							SET(outLocal, ANNOTATION_ARRAY.newArray(annotations.size.lit))
-							for ((index, annotation) in annotations.withIndex()) {
-								SET_ARRAY(outLocal, index.lit, toAnnotationExpr(annotation, temps, this))
-							}
-							RETURN(outLocal)
+							RETURN(ANNOTATION_ARRAY.newLiteralArray(
+								clazz.runtimeAnnotations.map { toAnnotationExpr(it, temps, this) }
+							))
 						}
+						caseIndex++
 					}
 				}
+				switchIndex++
 			}
 			RETURN(NULL)
 		}
@@ -183,30 +190,42 @@ class MetaReflectionJTranscPlugin : JTranscPlugin() {
 			val (classIdArg, fieldIdArg) = args
 
 			val temps = TempAstLocalFactory()
-			val outLocal = AstLocal(0, "out", ANNOTATION_ARRAY)
 
-			SWITCH(classIdArg.expr) {
-				for (clazz in visibleClasses) {
-					val fields = clazz.fields.filter { it.mustReflect() }
-					if (fields.flatMap { it.runtimeAnnotations }.isNotEmpty()) {
+			val cleanVisibleClasses = visibleClasses.filter { it.fields.filter { it.mustReflect() }.flatMap { it.runtimeAnnotations }.isNotEmpty() }
+
+			var switchIndex: Int = 0
+			while (switchIndex * CASES_PER_SWITCH < cleanVisibleClasses.size) {
+				SWITCH(classIdArg.expr) {
+					var caseIndex: Int = 0
+					while (caseIndex < CASES_PER_SWITCH && (switchIndex  * CASES_PER_SWITCH + caseIndex) < cleanVisibleClasses.size) {
+						val clazz = cleanVisibleClasses[switchIndex * CASES_PER_SWITCH + caseIndex]
+						val fields = clazz.fields.filter { it.mustReflect() }
 						CASE(clazz.classId) {
-							SWITCH(fieldIdArg.expr) {
-								for (field in fields) {
-									val annotations = field.runtimeAnnotations
-									if (annotations.isNotEmpty()) {
-										CASE(field.id) {
-											SET(outLocal, ANNOTATION_ARRAY.newArray(annotations.size.lit))
-											for ((index, annotation) in annotations.withIndex()) {
-												SET_ARRAY(outLocal, index.lit, toAnnotationExpr(annotation, temps, this))
+							val classId = clazz.classId
+							val perClassMethod = ProgramReflectionClass.createMethod("getFieldAnnotations$classId", AstType.METHOD(AstType.ARRAY(annotationType), AstType.INT), isStatic = true, asyncOpt = false) { args ->
+							//val perClassMethod = ProgramReflectionClass.createMethod("getFieldAnnotations$classId", AstType.METHOD(AstType.ARRAY(annotationType), AstType.INT), isStatic = true, asyncOpt = true) { args ->
+								val (fieldIdArgIn) = args
+								SWITCH(fieldIdArgIn.expr) {
+									for (field in fields) {
+										val annotations = field.runtimeAnnotations
+										if (annotations.isNotEmpty()) {
+											CASE(field.id) {
+												RETURN(ANNOTATION_ARRAY.newLiteralArray(
+													annotations.map { toAnnotationExpr(it, temps, this) }
+												))
 											}
-											RETURN(outLocal)
 										}
 									}
 								}
+								RETURN(NULL)
 							}
+
+							RETURN(perClassMethod.invoke(fieldIdArg.expr))
 						}
+						caseIndex++
 					}
 				}
+				switchIndex++
 			}
 			RETURN(NULL)
 		}
@@ -215,7 +234,6 @@ class MetaReflectionJTranscPlugin : JTranscPlugin() {
 			val (classIdArg, methodIdArg) = args
 
 			val temps = TempAstLocalFactory()
-			val outLocal = AstLocal(0, "out", ANNOTATION_ARRAY)
 
 			SWITCH(classIdArg.expr) {
 				for (clazz in visibleClasses) {
@@ -227,11 +245,9 @@ class MetaReflectionJTranscPlugin : JTranscPlugin() {
 									val annotations = method.runtimeAnnotations
 									if (annotations.isNotEmpty()) {
 										CASE(method.id) {
-											SET(outLocal, ANNOTATION_ARRAY.newArray(annotations.size.lit))
-											for ((index, annotation) in annotations.withIndex()) {
-												SET_ARRAY(outLocal, index.lit, toAnnotationExpr(annotation, temps, this))
-											}
-											RETURN(outLocal)
+											RETURN(ANNOTATION_ARRAY.newLiteralArray(
+												annotations.map { toAnnotationExpr(it, temps, this) }
+											))
 										}
 									}
 								}
@@ -247,7 +263,6 @@ class MetaReflectionJTranscPlugin : JTranscPlugin() {
 			val (classIdArg, methodIdArg, argIndexArt) = args
 
 			val temps = TempAstLocalFactory()
-			val outLocal = AstLocal(0, "out", ANNOTATION_ARRAY)
 
 			SWITCH(classIdArg.expr) {
 				for (clazz in visibleClasses) {
@@ -264,11 +279,9 @@ class MetaReflectionJTranscPlugin : JTranscPlugin() {
 													val annotations = method.parameterAnnotations[argIndex]
 													if (annotations.isNotEmpty()) {
 														CASE(argIndex) {
-															SET(outLocal, ANNOTATION_ARRAY.newArray(annotations.size.lit))
-															for ((index, annotation) in annotations.withIndex()) {
-																SET_ARRAY(outLocal, index.lit, toAnnotationExpr(annotation, temps, this))
-															}
-															RETURN(outLocal)
+															RETURN(ANNOTATION_ARRAY.newLiteralArray(
+																annotations.map { toAnnotationExpr(it, temps, this) }
+															))
 														}
 													}
 												}
@@ -285,57 +298,74 @@ class MetaReflectionJTranscPlugin : JTranscPlugin() {
 			RETURN(NULL)
 		}
 
-		val casesPerMethod: Int = 100
+		val getAllClassesCountMethod: AstMethod? = program[ProgramReflection.AllClasses::class.java.fqname].getMethodWithoutOverrides(ProgramReflection.AllClasses::getAllClassesCount.name)
 
-		val getAllClassesMethod: AstMethod? =
-			if (program.contains(ProgramReflection.AllClasses::class.java.fqname))
-				program[ProgramReflection.AllClasses::class.java.fqname].getMethodWithoutOverrides(ProgramReflection.AllClasses::getAllClasses.name)
-			else
-				ProgramReflectionClass.getMethodWithoutOverrides(ProgramReflection::getAllClasses.name)
-
-		getAllClassesMethod?.replaceBodyOptBuild {
-			val out = AstLocal(0, "out", ARRAY(CLASS_INFO))
-
-			SET(out, ARRAY(CLASS_INFO).newArray(program.lastClassId.lit))
-
-			for (oldClass in visibleClasses.sortedBy { it.classId }) {
-				val classId = oldClass.classId
-				val directInterfaces = oldClass.directInterfaces
-				val relatedTypes = oldClass.getAllRelatedTypesIdsWithout0AtEnd()
-				//println("CLASS: ${oldClass.fqname}")
-				SET_ARRAY(out, classId.lit, CLASS_INFO_CREATE(
-					classId.lit,
-					if (genInternalClassNames) AstExpr.LITERAL_REFNAME(oldClass.ref) else NULL,
-					oldClass.fqname.lit,
-					oldClass.modifiers.acc.lit,
-					(oldClass.parentClass?.classId ?: -1).lit,
-					if (directInterfaces.isNotEmpty()) AstExpr.INTARRAY_LITERAL(directInterfaces.map { it.classId }) else null.lit,
-					if (relatedTypes.isNotEmpty()) AstExpr.INTARRAY_LITERAL(relatedTypes) else null.lit
-				))
-			}
-			RETURN(out.local)
+		getAllClassesCountMethod?.replaceBodyOptBuild {
+			RETURN(program.lastClassId.lit)
 		}
 
+		val getAllClassesPartMethods: List<AstMethod?> = listOf(
+			program[ProgramReflection.AllClasses::class.java.fqname].getMethodWithoutOverrides(ProgramReflection.AllClasses::getAllClasses3000.name),
+			program[ProgramReflection.AllClasses::class.java.fqname].getMethodWithoutOverrides(ProgramReflection.AllClasses::getAllClasses6000.name),
+			program[ProgramReflection.AllClasses::class.java.fqname].getMethodWithoutOverrides(ProgramReflection.AllClasses::getAllClasses9000.name),
+			program[ProgramReflection.AllClasses::class.java.fqname].getMethodWithoutOverrides(ProgramReflection.AllClasses::getAllClasses12000.name),
+			program[ProgramReflection.AllClasses::class.java.fqname].getMethodWithoutOverrides(ProgramReflection.AllClasses::getAllClasses15000.name),
+			program[ProgramReflection.AllClasses::class.java.fqname].getMethodWithoutOverrides(ProgramReflection.AllClasses::getAllClassesMax.name)
+		)
+
+		for ((part, getAllClassesPartMethod) in getAllClassesPartMethods.withIndex()) {
+			getAllClassesPartMethod?.replaceBodyOptBuild {
+				val out = AstLocal(0, "out", ARRAY(CLASS_INFO))
+				var partVisibleClasses: List<AstClass> = visibleClasses.filter { it.classId in part*3000..((part+1)*3000-1) }.sortedBy { it.classId }
+				if (part == getAllClassesPartMethods.size - 1) {
+					partVisibleClasses =  visibleClasses.filter { it.classId >= 15000 }.sortedBy { it.classId }
+				}
+				SET(out, ARRAY(CLASS_INFO).newArray(partVisibleClasses.size))
+				for ((index, oldClass) in partVisibleClasses.withIndex()) {
+					val classId = oldClass.classId
+					val directInterfaces = oldClass.directInterfaces
+					val relatedTypes = oldClass.getAllRelatedTypesIdsWithout0AtEnd()
+					SET_ARRAY(out, index.lit, CLASS_INFO_CREATE(
+						classId.lit,
+						if (genInternalClassNames) AstExpr.LITERAL_REFNAME(oldClass.ref) else NULL,
+						oldClass.fqname.lit,
+						oldClass.modifiers.acc.lit,
+						(oldClass.parentClass?.classId ?: -1).lit,
+						if (directInterfaces.isNotEmpty()) AstExpr.INTARRAY_LITERAL(directInterfaces.map { it.classId }) else null.lit,
+						if (relatedTypes.isNotEmpty()) AstExpr.INTARRAY_LITERAL(relatedTypes) else null.lit
+					))
+				}
+				RETURN(out.local)
+			}
+		}
 
 		// @TODO: We should create a submethod per class to avoid calling ::SI (static initialization) for all the classes
-		if (program.contains(ProgramReflection.DynamicNewInvoke::class.java.fqname)) {
-			val dynamicNewInvokeClass: AstClass = program[ProgramReflection.DynamicNewInvoke::class.java.fqname]
-			val dynamicInvokeMethod: AstMethod? = dynamicNewInvokeClass.getMethodWithoutOverrides(ProgramReflection.DynamicNewInvoke::dynamicInvoke.name)
+		if (program.contains(ProgramReflection.DynamicInvoke::class.java.fqname)) {
+			val dynamicInvokeClass: AstClass = program[ProgramReflection.DynamicInvoke::class.java.fqname]
+			val dynamicInvokeMethod: AstMethod? = dynamicInvokeClass.getMethodWithoutOverrides(ProgramReflection.DynamicInvoke::dynamicInvoke.name)
 
 			if (dynamicInvokeMethod != null) {
 				val additionalMethods: MutableList<AstMethod> = mutableListOf()
 				val classes: List<AstMethod> = visibleClasses.flatMap { it.methodsWithoutConstructors.filter { it.mustReflect() } }.sortedBy { it.id }
 
-				var methodIndex: Int = 0
-				while (methodIndex * casesPerMethod < classes.size) {
-					val mI: Int = methodIndex
-					val sI: Int = methodIndex * casesPerMethod
+				val dynamicInvokeClasses :List<AstClass?> = listOf(
+					program[ProgramReflection.DynamicInvokeFirst::class.java.fqname],
+					program[ProgramReflection.DynamicInvokeMiddle::class.java.fqname],
+					program[ProgramReflection.DynamicInvokeLast::class.java.fqname]
+				)
 
+				var methodIndex: Int = 0
+				while (methodIndex * CASES_PER_SWITCH < classes.size) {
+					val mI: Int = methodIndex
+					val sI: Int = methodIndex * CASES_PER_SWITCH
+
+					val currentDynamicInvokeClass = dynamicInvokeClasses[methodIndex % dynamicInvokeClasses.size]
+					val currentDynamicInvokeMethod: AstMethod? = currentDynamicInvokeClass!!.getMethodWithoutOverrides(ProgramReflection.DynamicInvoke::dynamicInvoke.name)
 					val newMethod: AstMethod =
-						dynamicNewInvokeClass.createMethod(dynamicInvokeMethod.name + mI, dynamicInvokeMethod.methodType, true) {
+						currentDynamicInvokeClass.createMethod(currentDynamicInvokeMethod!!.name + mI, currentDynamicInvokeMethod.methodType, true, asyncOpt = true) {
 							val (classId, methodId, obj, args) = it
 							var currentIndex: Int = sI
-							val finishIndex: Int = if (currentIndex + casesPerMethod < classes.size) currentIndex + casesPerMethod else classes.size
+							val finishIndex: Int = if (currentIndex + CASES_PER_SWITCH < classes.size) currentIndex + CASES_PER_SWITCH else classes.size
 
 							SWITCH(methodId.expr) {
 								while (currentIndex < finishIndex) {
@@ -374,7 +404,7 @@ class MetaReflectionJTranscPlugin : JTranscPlugin() {
 
 					while (--id >= 0) {
 						val method: AstMethod = additionalMethods[id]
-						val constructor: AstMethod = classes[id * casesPerMethod]
+						val constructor: AstMethod = classes[id * CASES_PER_SWITCH]
 						IF(AstExpr.BINOP(AstType.BOOL, methodId.expr, AstBinop.GE, constructor.id.lit)) {
 							val params: List<AstExpr> = listOf(classId.expr, methodId.expr, obj.expr, args.expr)
 							val callExprUncasted = AstExpr.CALL_STATIC(method.ref, params)
@@ -388,24 +418,24 @@ class MetaReflectionJTranscPlugin : JTranscPlugin() {
 
 
 		// @TODO: We should create a submethod per class to avoid calling ::SI (static initialization) for all the classes
-		if (program.contains(ProgramReflection.DynamicNewInvoke::class.java.fqname)) {
-			val dynamicNewInvokeClass: AstClass = program[ProgramReflection.DynamicNewInvoke::class.java.fqname]
-			val dynamicNewMethod: AstMethod? = dynamicNewInvokeClass.getMethodWithoutOverrides(ProgramReflection.DynamicNewInvoke::dynamicNew.name)
+		if (program.contains(ProgramReflection.DynamicNew::class.java.fqname)) {
+			val dynamicNewClass: AstClass = program[ProgramReflection.DynamicNew::class.java.fqname]
+			val dynamicNewMethod: AstMethod? = dynamicNewClass.getMethodWithoutOverrides(ProgramReflection.DynamicNew::dynamicNew.name)
 
 			if (dynamicNewMethod != null) {
 				val additionalMethods: MutableList<AstMethod> = mutableListOf()
 				val classes: List<AstMethod> = visibleClasses.filter { !it.isAbstract && !it.isInterface }.flatMap { it.constructors.filter { it.mustReflect() } }.sortedBy { it.id }
 
 				var methodIndex: Int = 0
-				while (methodIndex * casesPerMethod < classes.size) {
+				while (methodIndex * CASES_PER_SWITCH < classes.size) {
 					val mI: Int = methodIndex
-					val sI: Int = methodIndex * casesPerMethod
+					val sI: Int = methodIndex * CASES_PER_SWITCH
 
 					val newMethod: AstMethod =
-						dynamicNewInvokeClass.createMethod(dynamicNewMethod.name + mI, dynamicNewMethod.methodType, true) {
+						dynamicNewClass.createMethod(dynamicNewMethod.name + mI, dynamicNewMethod.methodType, true, asyncOpt = true) {
 							val (classId, methodId, args) = it
 							var currentIndex: Int = sI
-							val finishIndex: Int = if (currentIndex + casesPerMethod < classes.size) currentIndex + casesPerMethod else classes.size
+							val finishIndex: Int = if (currentIndex + CASES_PER_SWITCH < classes.size) currentIndex + CASES_PER_SWITCH else classes.size
 
 							SWITCH(methodId.expr) {
 								while (currentIndex < finishIndex) {
@@ -436,7 +466,7 @@ class MetaReflectionJTranscPlugin : JTranscPlugin() {
 
 					while (--id >= 0) {
 						val method: AstMethod = additionalMethods[id]
-						val constructor: AstMethod = classes[id * casesPerMethod]
+						val constructor: AstMethod = classes[id * CASES_PER_SWITCH]
 						IF(AstExpr.BINOP(AstType.BOOL, methodId.expr, AstBinop.GE, constructor.id.lit)) {
 							val params: List<AstExpr> = listOf(classId.expr, methodId.expr, args.expr)
 							val callExprUncasted = AstExpr.CALL_STATIC(method.ref, params)
@@ -454,26 +484,44 @@ class MetaReflectionJTranscPlugin : JTranscPlugin() {
 		if (MemberInfo::class.java.fqname in program) {
 			val MemberInfoClass = program[MemberInfo::class.java.fqname]
 			val MemberInfo_create = MemberInfoClass.getMethodWithoutOverrides(MemberInfo::create.name)!!.ref
-			//val MemberInfo_createList = MemberInfoClass.getMethodWithoutOverrides(MemberInfo::createList.name)!!.ref
 
 			data class MemberInfoWithRef(val ref: Any, val mi: MemberInfo)
 
-			fun genMemberMethods(list: List<Pair<AstClass, List<MemberInfoWithRef>>>, clazz: AstClass, method: AstMethod): List<AstMethod> {
+			fun AstBuilder2.genMemberList(args: List<AstArgument>, list: List<Pair<AstClass, List<MemberInfoWithRef>>>, additionalMethods: List<AstMethod>) {
+				val (classIdArg) = args
+				var id: Int = additionalMethods.size
+
+				while (--id >= 0) {
+					val method: AstMethod = additionalMethods[id]
+					val (keyClass, members) = list[id * CASES_PER_SWITCH]
+					IF(AstExpr.BINOP(AstType.BOOL, classIdArg.expr, AstBinop.GE, keyClass.classId.lit)) {
+						val params = listOf(classIdArg.expr)
+						val callExprUncasted = AstExpr.CALL_STATIC(method.ref, params)
+
+						RETURN(callExprUncasted.castTo(ARRAY(MemberInfoClass)))
+					}
+				}
+
+				RETURN(NULL)
+			}
+
+			fun genMemberMethods(list: List<Pair<AstClass, List<MemberInfoWithRef>>>, classes: List<AstClass>, methodName: String, generalClass: AstClass) {
+
 				val additionalMethods: MutableList<AstMethod> = mutableListOf()
 				var methodIndex: Int = 0
-				while (methodIndex * casesPerMethod < list.size) {
+				while (methodIndex * CASES_PER_SWITCH < list.size) {
 					val mI: Int = methodIndex
-					val sI: Int = methodIndex * casesPerMethod
-					val parentClass: AstClass = clazz
-					val parentMethod: AstMethod = method
+					val sI: Int = methodIndex * CASES_PER_SWITCH
+					val parentClass: AstClass = classes[methodIndex % classes.size]
+					val parentMethod: AstMethod? = parentClass.getMethodWithoutOverrides(methodName)
 
 					val newMethod: AstMethod =
-						parentClass.createMethod(parentMethod.name + mI, parentMethod.methodType, true) {
+						parentClass.createMethod(parentMethod!!.name + mI, parentMethod.methodType, true, asyncOpt = false) {
 							val (classIdArg) = it
 							val out = AstLocal(0, "out", ARRAY(MemberInfoClass))
 
 							var currentIndex: Int = sI
-							val finishIndex: Int = if (currentIndex + casesPerMethod < list.size) currentIndex + casesPerMethod else list.size
+							val finishIndex: Int = if (currentIndex + CASES_PER_SWITCH < list.size) currentIndex + CASES_PER_SWITCH else list.size
 
 							SWITCH(classIdArg.expr) {
 								while (currentIndex < finishIndex) {
@@ -506,102 +554,75 @@ class MetaReflectionJTranscPlugin : JTranscPlugin() {
 					additionalMethods.add(newMethod)
 					methodIndex++
 				}
-				return additionalMethods
-			}
 
-			fun AstBuilder2.genMemberList(args: List<AstArgument>, list: List<Pair<AstClass, List<MemberInfoWithRef>>>, additionalMethods: List<AstMethod>) {
-				val (classIdArg) = args
-				var id: Int = additionalMethods.size
-
-				while (--id >= 0) {
-					val method: AstMethod = additionalMethods[id]
-					val (keyClass, members) = list[id * casesPerMethod]
-					IF(AstExpr.BINOP(AstType.BOOL, classIdArg.expr, AstBinop.GE, keyClass.classId.lit)) {
-						val params = listOf(classIdArg.expr)
-						val callExprUncasted = AstExpr.CALL_STATIC(method.ref, params)
-
-						RETURN(callExprUncasted.castTo(ARRAY(MemberInfoClass)))
-					}
+				generalClass.getMethodWithoutOverrides(methodName)!!.replaceBodyOptBuild {
+					genMemberList(it, list, additionalMethods)
 				}
-
-				RETURN(NULL)
 			}
 
 			// ProgramReflectionClass.getConstructors
 			if (program.contains(ProgramReflection.AllConstructors::class.java.fqname)) {
-				val allConstructorsClass: AstClass = program[ProgramReflection.AllConstructors::class.java.fqname]
-				val getConstructorsMethod: AstMethod? = allConstructorsClass.getMethodWithoutOverrides(ProgramReflection.AllConstructors::getConstructors.name)
-
-				if (getConstructorsMethod != null) {
-					val list: List<Pair<AstClass, List<MemberInfoWithRef>>> = visibleClasses.map { clazz ->
-						clazz to clazz.constructors.filter { it.mustReflect() }.map {
-							MemberInfoWithRef(it.ref, MemberInfo(it.id, null, it.name, it.modifiers.acc, it.desc, it.genericSignature))
-						}
-					}.toList()
-
-					val additionalMethods = genMemberMethods(list, allConstructorsClass, getConstructorsMethod)
-					getConstructorsMethod.replaceBodyOptBuild {
-						genMemberList(it, list, additionalMethods)
+				val list: List<Pair<AstClass, List<MemberInfoWithRef>>> = visibleClasses.map {
+					it to it.constructors.filter { it.mustReflect() }.map {
+						MemberInfoWithRef(it.ref, MemberInfo(it.id, null, it.name, it.modifiers.acc, it.desc, it.genericSignature))
 					}
-				}
+				}.toList()
+				val allConstructorsClasses :List<AstClass> = listOf(
+					program[ProgramReflection.AllConstructorsFirst::class.java.fqname],
+					program[ProgramReflection.AllConstructorsMiddle::class.java.fqname],
+					program[ProgramReflection.AllConstructorsLast::class.java.fqname]
+				)
+				genMemberMethods(list, allConstructorsClasses, ProgramReflection.AllConstructors::getConstructors.name, program[ProgramReflection.AllConstructors::class.java.fqname])
 			}
 
 			// ProgramReflectionClass.getMethods
 			if (program.contains(ProgramReflection.AllMethods::class.java.fqname)) {
-				val allMethodsClass: AstClass = program[ProgramReflection.AllMethods::class.java.fqname]
-				val getMethodsMethod: AstMethod? = allMethodsClass.getMethodWithoutOverrides(ProgramReflection.AllMethods::getMethods.name)
-
-				if (getMethodsMethod != null) {
-					val list: List<Pair<AstClass, List<MemberInfoWithRef>>> = visibleClasses.map { clazz ->
-						clazz to clazz.methodsWithoutConstructors.filter { it.mustReflect() }.map {
-							MemberInfoWithRef(it.ref, MemberInfo(it.id, null, it.name, it.modifiers.acc, it.desc, it.genericSignature))
-						}
-					}.toList()
-
-					val additionalMethods = genMemberMethods(list, allMethodsClass, getMethodsMethod)
-					getMethodsMethod.replaceBodyOptBuild {
-						genMemberList(it, list, additionalMethods)
+				val list: List<Pair<AstClass, List<MemberInfoWithRef>>> = visibleClasses.map {
+					it to it.methodsWithoutConstructors.filter { it.mustReflect() }.map {
+						MemberInfoWithRef(it.ref, MemberInfo(it.id, null, it.name, it.modifiers.acc, it.desc, it.genericSignature))
 					}
-				}
+				}.toList()
+				val allMethodsClasses :List<AstClass> = listOf(
+					program[ProgramReflection.AllMethodsFirst::class.java.fqname],
+					program[ProgramReflection.AllMethodsMiddle::class.java.fqname],
+					program[ProgramReflection.AllMethodsLast::class.java.fqname]
+				)
+				genMemberMethods(list, allMethodsClasses, ProgramReflection.AllMethods::getMethods.name, program[ProgramReflection.AllMethods::class.java.fqname])
 			}
 
 			// ProgramReflectionClass.getFields
 			if (program.contains(ProgramReflection.AllFields::class.java.fqname)) {
-				val allFieldsClass: AstClass = program[ProgramReflection.AllFields::class.java.fqname]
-				val getFieldsMethod: AstMethod? = allFieldsClass.getMethodWithoutOverrides(ProgramReflection.AllFields::getFields.name)
-
-				if (getFieldsMethod != null) {
-					val list: List<Pair<AstClass, List<MemberInfoWithRef>>> = visibleClasses.map { clazz ->
-						clazz to clazz.fields.filter { it.mustReflect() }.map {
-							MemberInfoWithRef(it.ref, MemberInfo(it.id, null, it.name, it.modifiers.acc, it.desc, it.genericSignature))
-						}
-					}.toList()
-
-					val additionalMethods = genMemberMethods(list, allFieldsClass, getFieldsMethod)
-					getFieldsMethod.replaceBodyOptBuild {
-						genMemberList(it, list, additionalMethods)
+				val list: List<Pair<AstClass, List<MemberInfoWithRef>>> = visibleClasses.map {
+					it to it.fields.filter { it.mustReflect() }.map {
+						MemberInfoWithRef(it.ref, MemberInfo(it.id, null, it.name, it.modifiers.acc, it.desc, it.genericSignature))
 					}
-				}
+				}.toList()
+				val allFieldsClasses :List<AstClass> = listOf(
+					program[ProgramReflection.AllFieldsFirst::class.java.fqname],
+					program[ProgramReflection.AllFieldsMiddle::class.java.fqname],
+					program[ProgramReflection.AllFieldsLast::class.java.fqname]
+				)
+				genMemberMethods(list, allFieldsClasses, ProgramReflection.AllFields::getFields.name, program[ProgramReflection.AllFields::class.java.fqname])
 			}
 
 			// ProgramReflectionClass.dynamicGet
-			if (program.contains(ProgramReflection.DynamicGetSet::class.java.fqname)) {
-				val dynamicGetSetClass: AstClass = program[ProgramReflection.DynamicGetSet::class.java.fqname]
-				val dynamicGetMethod: AstMethod? = dynamicGetSetClass.getMethodWithoutOverrides(ProgramReflection.DynamicGetSet::dynamicGet.name)
+			if (program.contains(ProgramReflection.DynamicGet::class.java.fqname)) {
+				val dynamicGetClass: AstClass = program[ProgramReflection.DynamicGet::class.java.fqname]
+				val dynamicGetMethod: AstMethod? = dynamicGetClass.getMethodWithoutOverrides(ProgramReflection.DynamicGet::dynamicGet.name)
 
 				if (dynamicGetMethod != null) {
 					val additionalMethods: MutableList<AstMethod> = mutableListOf()
 					val fields: List<AstField> = visibleClasses.flatMap { it.fields.filter { it.mustReflect() } }.sortedBy { it.id }
 
 					var methodIndex: Int = 0
-					while (methodIndex * casesPerMethod < fields.size) {
+					while (methodIndex * CASES_PER_SWITCH < fields.size) {
 						val mI: Int = methodIndex
-						val sI: Int = methodIndex * casesPerMethod
+						val sI: Int = methodIndex * CASES_PER_SWITCH
 
-						val newMethod: AstMethod = dynamicGetSetClass.createMethod(dynamicGetMethod.name + mI, dynamicGetMethod.methodType, true) {
+						val newMethod: AstMethod = dynamicGetClass.createMethod(dynamicGetMethod.name + mI, dynamicGetMethod.methodType, true, asyncOpt = false) {
 							val (classId, fieldId, objParam) = it
 							var currentIndex: Int = sI
-							val finishIndex: Int = if (currentIndex + casesPerMethod < fields.size) currentIndex + casesPerMethod else fields.size
+							val finishIndex: Int = if (currentIndex + CASES_PER_SWITCH < fields.size) currentIndex + CASES_PER_SWITCH else fields.size
 
 							SWITCH(fieldId.expr) {
 								while (currentIndex < finishIndex) {
@@ -631,7 +652,7 @@ class MetaReflectionJTranscPlugin : JTranscPlugin() {
 
 						while (--id >= 0) {
 							val method: AstMethod = additionalMethods[id]
-							val field: AstField = fields[id * casesPerMethod]
+							val field: AstField = fields[id * CASES_PER_SWITCH]
 							IF(AstExpr.BINOP(AstType.BOOL, fieldId.expr, AstBinop.GE, field.id.lit)) {
 								val params = listOf(classId.expr, fieldId.expr, objParam.expr)
 								val callExprUncasted = AstExpr.CALL_STATIC(method.ref, params)
@@ -645,23 +666,23 @@ class MetaReflectionJTranscPlugin : JTranscPlugin() {
 
 
 			// ProgramReflectionClass.dynamicSet
-			if (program.contains(ProgramReflection.DynamicGetSet::class.java.fqname)) {
-				val dynamicGetSetClass: AstClass = program[ProgramReflection.DynamicGetSet::class.java.fqname]
-				val dynamicSetMethod: AstMethod? = dynamicGetSetClass.getMethodWithoutOverrides(ProgramReflection.DynamicGetSet::dynamicSet.name)
+			if (program.contains(ProgramReflection.DynamicSet::class.java.fqname)) {
+				val dynamicSetClass: AstClass = program[ProgramReflection.DynamicSet::class.java.fqname]
+				val dynamicSetMethod: AstMethod? = dynamicSetClass.getMethodWithoutOverrides(ProgramReflection.DynamicSet::dynamicSet.name)
 
 				if (dynamicSetMethod != null) {
 					val additionalMethods: MutableList<AstMethod> = mutableListOf()
 					val fields: List<AstField> = visibleClasses.flatMap { it.fields.filter { it.mustReflect() } }.sortedBy { it.id }
 
 					var methodIndex: Int = 0
-					while (methodIndex * casesPerMethod < fields.size) {
+					while (methodIndex * CASES_PER_SWITCH < fields.size) {
 						val mI: Int = methodIndex
-						val sI: Int = methodIndex * casesPerMethod
+						val sI: Int = methodIndex * CASES_PER_SWITCH
 
-						val newMethod: AstMethod = dynamicGetSetClass.createMethod(dynamicSetMethod.name + mI, dynamicSetMethod.methodType, true) {
+						val newMethod: AstMethod = dynamicSetClass.createMethod(dynamicSetMethod.name + mI, dynamicSetMethod.methodType, true, asyncOpt = false) {
 							val (classIdParam, fieldIdParam, objParam, valueParam) = it
 							var currentIndex: Int = sI
-							val finishIndex: Int = if (currentIndex + casesPerMethod < fields.size) currentIndex + casesPerMethod else fields.size
+							val finishIndex: Int = if (currentIndex + CASES_PER_SWITCH < fields.size) currentIndex + CASES_PER_SWITCH else fields.size
 
 							SWITCH(fieldIdParam.expr) {
 								while (currentIndex < finishIndex) {
@@ -689,7 +710,7 @@ class MetaReflectionJTranscPlugin : JTranscPlugin() {
 
 						while (--id >= 0) {
 							val method: AstMethod = additionalMethods[id]
-							val field: AstField = fields[id * casesPerMethod]
+							val field: AstField = fields[id * CASES_PER_SWITCH]
 							IF(AstExpr.BINOP(AstType.BOOL, fieldIdParam.expr, AstBinop.GE, field.id.lit)) {
 								val params = listOf(classIdParam.expr, fieldIdParam.expr, objParam.expr, valueParam.expr)
 								STM(AstExpr.CALL_STATIC(method.ref, params))
